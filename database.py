@@ -34,6 +34,26 @@ def init_db():
         created_at TEXT
     )''')
     
+    # အစီအစဉ် Table
+    c.execute('''CREATE TABLE IF NOT EXISTS schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        time TEXT,
+        title TEXT,
+        description TEXT,
+        reminder_hours INTEGER DEFAULT 2,
+        created_at TEXT
+    )''')
+    
+    # သတိပေးချက် Table
+    c.execute('''CREATE TABLE IF NOT EXISTS reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER,
+        reminder_time TEXT,
+        message TEXT,
+        is_sent INTEGER DEFAULT 0
+    )''')
+    
     # Backup Log Table
     c.execute('''CREATE TABLE IF NOT EXISTS backup_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,26 +66,21 @@ def init_db():
     conn.commit()
     conn.close()
     
-    # Database ကို Backup လုပ်မယ်
     backup_database()
 
 def backup_database():
     """Database ကို Backup သိမ်းမယ်"""
     try:
-        # Backup folder ဖန်တီးမယ်
         if not os.path.exists('backups'):
             os.makedirs('backups')
         
-        # Backup file name
         now = datetime.datetime.now()
         backup_name = f"backups/finance_backup_{now.strftime('%Y-%m-%d')}.db"
         
-        # Database ကို copy ကူးမယ်
         import shutil
         if os.path.exists('finance.db'):
             shutil.copy2('finance.db', backup_name)
             
-            # Backup log သိမ်းမယ်
             conn = sqlite3.connect('finance.db')
             c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM transactions")
@@ -83,6 +98,10 @@ def backup_database():
     except Exception as e:
         print(f"❌ Backup error: {e}")
 
+def format_response(message):
+    """ဆရာနဲ့အကျွန်ပုံစံ ပြန်ဖြေမယ်"""
+    return f"{message}"
+
 def add_transaction(transaction_type, amount, description="", person="", category=""):
     """ငွေစာရင်းထည့်မယ်"""
     conn = sqlite3.connect('finance.db')
@@ -99,7 +118,6 @@ def add_transaction(transaction_type, amount, description="", person="", categor
     conn.commit()
     conn.close()
     
-    # ပြန်ဖြေမယ်
     return format_response(f"✅ ဆရာရဲ့ {transaction_type} {amount} ကျပ်ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
 
 def add_note(category, title, description=""):
@@ -132,32 +150,11 @@ def add_schedule_with_reminder(date, time, title, description="", reminder_hours
     conn = sqlite3.connect('finance.db')
     c = conn.cursor()
     
-    # အစီအစဉ် Table ရှိမရှိစစ်မယ်
-    c.execute('''CREATE TABLE IF NOT EXISTS schedules (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        title TEXT,
-        description TEXT,
-        reminder_hours INTEGER DEFAULT 2,
-        created_at TEXT
-    )''')
-    
-    # သတိပေးချက် Table
-    c.execute('''CREATE TABLE IF NOT EXISTS reminders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        schedule_id INTEGER,
-        reminder_time TEXT,
-        message TEXT,
-        is_sent INTEGER DEFAULT 0
-    )''')
-    
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute("INSERT INTO schedules (date, time, title, description, reminder_hours, created_at) VALUES (?, ?, ?, ?, ?, ?)",
               (date, time, title, description, reminder_hours, now))
     schedule_id = c.lastrowid
     
-    # သတိပေးချက်အချိန်တွက်မယ်
     from datetime import datetime, timedelta
     event_datetime = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
     reminder_datetime = event_datetime - timedelta(hours=reminder_hours)
@@ -188,10 +185,6 @@ def mark_reminder_sent(reminder_id):
     conn.commit()
     conn.close()
 
-def format_response(message):
-    """ဆရာနဲ့အကျွန်ပုံစံ ပြန်ဖြေမယ်"""
-    return f"{message}"
-
 def get_full_daily_report():
     """နေ့စဉ် အပြည့်အစုံစာရင်း - ငွေ၊ အလုပ်၊ ကိုယ်ရေး၊ အခြား အကုန်ပါမယ်"""
     conn = sqlite3.connect('finance.db')
@@ -200,7 +193,7 @@ def get_full_daily_report():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # ၁။ ငွေစာရင်း
+    # ငွေစာရင်း
     c.execute("""SELECT type, SUM(amount) 
                  FROM transactions 
                  WHERE date = ? AND status = 'active'
@@ -213,7 +206,7 @@ def get_full_daily_report():
                  ORDER BY time DESC""", (today,))
     transactions = c.fetchall()
     
-    # ၂။ မှတ်စုများ (အလုပ်၊ ကိုယ်ရေး၊ အခြား)
+    # မှတ်စုများ
     c.execute("""SELECT category, title, description, time 
                  FROM notes 
                  WHERE date = ? AND status = 'active'
@@ -222,7 +215,6 @@ def get_full_daily_report():
     
     conn.close()
     
-    # Report စတင်ဆောက်မယ်
     report = f"📊 **{today} နေ့စဉ် အပြည့်အစုံ အစီရင်ခံစာ**\n"
     report += f"📅 စာရင်းကောက်ချိန်: {now}\n\n"
     
@@ -247,7 +239,6 @@ def get_full_daily_report():
     report += f"  📉 ထွက်ငွေ: {total_out} ကျပ်\n"
     report += f"  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
     
-    # အသေးစိတ်ငွေစာရင်း
     if transactions:
         report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
         for t in transactions:
@@ -391,6 +382,44 @@ def get_detailed_report(days=0, months=0):
             report += f"  📌 {title}\n"
             if description:
                 report += f"  📝 {description}\n"
+    
+    return format_response(report)
+
+def get_category_report(category):
+    """အမျိုးအစားအလိုက် စာရင်းပြမယ်"""
+    conn = sqlite3.connect('finance.db')
+    c = conn.cursor()
+    
+    category_names = {
+        'work': 'အလုပ်ကိစ္စ',
+        'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ',
+        'other': 'အခြားကိစ္စ'
+    }
+    cat_name = category_names.get(category, category)
+    
+    c.execute("""SELECT date, time, title, description 
+                 FROM notes 
+                 WHERE category = ? AND status = 'active'
+                 ORDER BY date DESC, time DESC""", (category,))
+    notes = c.fetchall()
+    conn.close()
+    
+    if not notes:
+        return format_response(f"📋 {cat_name} စာရင်းမရှိပါဆရာ။")
+    
+    report = f"📋 **{cat_name} စာရင်း**\n\n"
+    for date, time_val, title, description in notes:
+        date_parts = date.split('-')
+        month_names = ["ဇန်နဝါရီ", "ဖေဖော်ဝါရီ", "မတ်", "ဧပြီ", "မေ", "ဇွန်", 
+                      "ဇူလိုင်", "သြဂုတ်", "စက်တင်ဘာ", "အောက်တိုဘာ", "နိုဝင်ဘာ", "ဒီဇင်ဘာ"]
+        month_str = month_names[int(date_parts[1]) - 1]
+        myanmar_date = f"{date_parts[2]} {month_str} {date_parts[0]}"
+        
+        report += f"📅 {myanmar_date} ({time_val})\n"
+        report += f"📌 {title}\n"
+        if description:
+            report += f"📝 {description}\n"
+        report += "\n"
     
     return format_response(report)
 
