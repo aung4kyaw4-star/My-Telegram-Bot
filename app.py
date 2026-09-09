@@ -3,7 +3,7 @@ import time
 import json
 import urllib.request
 import urllib.error
-from flask import Flask, request
+from flask import Flask
 import threading
 import database
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -36,6 +36,16 @@ def send_telegram_message(chat_id, text, reply_markup=None):
             pass
     except Exception as e:
         print(f"Telegram Send Error: {e}")
+
+def answer_callback(callback_id):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+        payload = json.dumps({"callback_query_id": callback_id}).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+        with OPENER.open(req, timeout=5) as response:
+            pass
+    except Exception as e:
+        print(f"Answer callback error: {e}")
 
 # ============ Keyboard Menus ============
 
@@ -97,20 +107,11 @@ def create_delete_menu():
         ]
     }
 
-def answer_callback(callback_id):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-    payload = json.dumps({"callback_query_id": callback_id}).encode('utf-8')
-    req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
-    try:
-        with OPENER.open(req, timeout=5) as response:
-            pass
-    except Exception as e:
-        print(f"Answer callback error: {e}")
-
 # ============ Handle Callback ============
 
 def handle_callback(chat_id, data):
-    # ---- မီနူးများ ----
+    print(f"Handling callback: {data}")
+    
     if data == "back_main":
         send_telegram_message(chat_id, "ဆရာ ဘာလုပ်ချင်ပါသလဲ။", create_main_menu())
     elif data == "report_menu":
@@ -189,7 +190,7 @@ def process_user_request(chat_id, user_text):
     text_lower = user_text.lower()
     import re
     
-    # ---- ပင်မစာများ (Text Command) ----
+    # ---- ပင်မစာများ ----
     if text_lower in ["စာရင်း", "နေ့စာရင်း", "ဒီနေ့စာရင်း"]:
         reply = database.get_full_daily_report()
         send_telegram_message(chat_id, reply, create_main_menu())
@@ -205,8 +206,7 @@ def process_user_request(chat_id, user_text):
         send_telegram_message(chat_id, reply, create_main_menu())
         return
     
-    # ---- ငွေစာရင်းတွေကို ကိုယ်တိုင်ခွဲထုတ်မယ် ----
-    # သုံးငွေ
+    # ---- သုံးငွေ ----
     if "သုံးငွေ" in text_lower or "သုံးစွဲ" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -221,7 +221,7 @@ def process_user_request(chat_id, user_text):
         send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
         return
     
-    # ယူငွေ
+    # ---- ယူငွေ ----
     if "ယူငွေ" in text_lower or "ဝင်ငွေ" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -236,7 +236,7 @@ def process_user_request(chat_id, user_text):
         send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
         return
     
-    # ချေးငွေ
+    # ---- ချေးငွေ ----
     if "ချေးငွေ" in text_lower or "ချေး" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -261,7 +261,7 @@ def process_user_request(chat_id, user_text):
         send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
         return
     
-    # ပြန်ဆပ်
+    # ---- ပြန်ဆပ် ----
     if "ပြန်ဆပ်" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -317,26 +317,6 @@ def process_user_request(chat_id, user_text):
     # ---- နားမလည်ရင် ပင်မမီနူးပြမယ် ----
     send_telegram_message(chat_id, "ဆရာ ဘာလုပ်ချင်ပါသလဲ။", create_main_menu())
 
-# ============ Webhook ============
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    try:
-        data = json.loads(request.get_data().decode('utf-8'))
-        if 'callback_query' in data:
-            callback = data['callback_query']
-            chat_id = callback['message']['chat']['id']
-            callback_data = callback['data']
-            handle_callback(chat_id, callback_data)
-            answer_callback(callback['id'])
-        elif 'message' in data:
-            chat_id = data['message']['chat']['id']
-            text = data['message'].get('text', '')
-            process_user_request(chat_id, text)
-    except Exception as e:
-        print(f"Webhook error: {e}")
-    return "OK", 200
-
 # ============ Reminder Checker ============
 
 def check_and_send_reminders():
@@ -352,7 +332,7 @@ def check_and_send_reminders():
     except Exception as e:
         print(f"Reminder check error: {e}")
 
-# ============ Polling Mode (အသုံးပြုမယ်) ============
+# ============ Polling Mode ============
 
 def run_bot_polling():
     offset = 0
@@ -373,6 +353,19 @@ def run_bot_polling():
                 if result.get("ok"):
                     for update in result.get("result", []):
                         offset = update["update_id"] + 1
+                        
+                        # Callback Query ကိုစစ်ဆေးမယ်
+                        if "callback_query" in update:
+                            callback = update["callback_query"]
+                            chat_id = callback["message"]["chat"]["id"]
+                            data = callback["data"]
+                            callback_id = callback["id"]
+                            
+                            print(f"Callback received: {data}")
+                            handle_callback(chat_id, data)
+                            answer_callback(callback_id)
+                            continue
+                        
                         if "message" in update and "text" in update["message"]:
                             chat_id = update["message"]["chat"]["id"]
                             user_text = update["message"]["text"]
