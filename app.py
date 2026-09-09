@@ -132,7 +132,6 @@ def process_user_request(chat_id, user_text):
         MY_CHAT_ID = str(chat_id)
         print(f"Chat ID saved: {MY_CHAT_ID}")
     
-    # Gemini နဲ့ စာကိုခွဲထုတ်မယ်
     result = process_with_gemini(user_text)
     
     if not result:
@@ -140,7 +139,6 @@ def process_user_request(chat_id, user_text):
     
     action_type = result.get("type", "chat")
     
-    # ---- ငွေစာရင်းထည့်ခြင်း ----
     if action_type == "transaction":
         trans_type = result.get("transaction_type", "")
         amount = result.get("amount", 0)
@@ -153,7 +151,6 @@ def process_user_request(chat_id, user_text):
         
         return database.add_transaction(trans_type, amount, description, person, category)
     
-    # ---- မှတ်စုထည့်ခြင်း ----
     elif action_type == "note":
         category = result.get("category", "other")
         title = result.get("title", "")
@@ -164,7 +161,6 @@ def process_user_request(chat_id, user_text):
         
         return database.add_note(category, title, description)
     
-    # ---- အကြွေးပြန်ဆပ်ခြင်း ----
     elif action_type == "repay":
         person = result.get("person", "")
         amount = result.get("amount", 0)
@@ -174,7 +170,6 @@ def process_user_request(chat_id, user_text):
         
         return database.repay_debt(person, amount)
     
-    # ---- စာရင်းတောင်းခြင်း ----
     elif action_type == "report":
         report_type = result.get("report_type", "daily")
         
@@ -191,8 +186,67 @@ def process_user_request(chat_id, user_text):
         else:
             return database.get_full_daily_report()
     
-    # ---- အစီအစဉ်သိမ်းခြင်း ----
     elif action_type == "schedule":
         title = result.get("title", "အစည်းအဝေး")
         date = result.get("date", "")
-        time_val = result.get("
+        time_val = result.get("time", "")
+        reminder_hours = result.get("reminder_hours", 2)
+        
+        if not date or not time_val:
+            return "ဆရာ ရက်စွဲနဲ့ အချိန်ကို ထည့်ပေးပါဆရာ။"
+        
+        return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
+    
+    else:
+        return result.get("message", "ဆရာ ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပေးပါဆရာ။")
+
+def check_and_send_reminders():
+    global MY_CHAT_ID
+    if MY_CHAT_ID is None:
+        return
+    try:
+        reminders = database.get_due_reminders()
+        for reminder_id, message in reminders:
+            send_telegram_message(MY_CHAT_ID, message)
+            database.mark_reminder_sent(reminder_id)
+            print(f"Reminder sent: {message}")
+    except Exception as e:
+        print(f"Reminder check error: {e}")
+
+def run_bot_polling():
+    offset = 0
+    print("Bot Polling Thread Started!")
+    database.init_db()
+    
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_and_send_reminders, 'interval', minutes=1)
+    scheduler.start()
+    print("Scheduler started!")
+    
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=15"
+            req = urllib.request.Request(url)
+            with OPENER.open(req, timeout=20) as response:
+                result = json.loads(response.read().decode('utf-8'))
+                if result.get("ok"):
+                    for update in result.get("result", []):
+                        offset = update["update_id"] + 1
+                        if "message" in update and "text" in update["message"]:
+                            chat_id = update["message"]["chat"]["id"]
+                            user_text = update["message"]["text"]
+                            print(f"Received: {user_text}")
+                            reply = process_user_request(chat_id, user_text)
+                            print(f"Reply: {reply[:100]}...")
+                            send_telegram_message(chat_id, reply)
+        except Exception as e:
+            print(f"Polling loop error: {e}")
+        time.sleep(1)
+
+if __name__ == '__main__':
+    bot_thread = threading.Thread(target=run_bot_polling)
+    bot_thread.daemon = True
+    bot_thread.start()
+    
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
