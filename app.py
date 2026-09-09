@@ -31,8 +31,8 @@ def send_telegram_message(chat_id, text):
         print(f"Telegram Send Error: {e}")
 
 def call_gemini(prompt_text):
-    # ဒီနေရာမှာ model ကို gemini-1.5-flash လို့ ပြင်ထားပါတယ်
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # ဒီနေရာမှာ gemini-3.5-flash ကိုသုံးပါ
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
     payload = {
         "contents": [{
             "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
