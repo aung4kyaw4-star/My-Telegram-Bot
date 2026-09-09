@@ -8,6 +8,7 @@ import threading
 import database
 from apscheduler.schedulers.background import BackgroundScheduler
 import datetime
+import re
 
 app = Flask(__name__)
 
@@ -38,43 +39,30 @@ def send_telegram_message(chat_id, text):
         print(f"Telegram Send Error: {e}")
 
 def call_gemini(prompt_text):
-    models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
-    last_error = ""
-    for model in models:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-            payload = {
-                "contents": [{
-                    "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
-                }]
-            }
-            data = json.dumps(payload).encode('utf-8')
-            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
-            with OPENER.open(req, timeout=30) as response:
-                res_data = json.loads(response.read().decode('utf-8'))
-                if 'error' in res_data:
-                    last_error = res_data['error'].get('message', 'Unknown error')
-                    continue
-                return res_data['candidates'][0]['content']['parts'][0]['text']
-        except Exception as e:
-            last_error = str(e)
-            continue
-    return f"System Error: {last_error}"
-
-def check_and_send_reminders():
-    global MY_CHAT_ID
-    if MY_CHAT_ID is None:
-        print("Chat ID not set yet.")
-        return
-    print("Checking reminders...")
-    reminders = database.get_due_reminders()
-    for reminder_id, message in reminders:
-        send_telegram_message(MY_CHAT_ID, message)
-        database.mark_reminder_sent(reminder_id)
-        print(f"Reminder sent: {message}")
+    try:
+        models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
+        for model in models:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
+                    }]
+                }
+                data = json.dumps(payload).encode('utf-8')
+                req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+                with OPENER.open(req, timeout=30) as response:
+                    res_data = json.loads(response.read().decode('utf-8'))
+                    if 'error' in res_data:
+                        continue
+                    return res_data['candidates'][0]['content']['parts'][0]['text']
+            except:
+                continue
+        return "Gemini API ယာယီမရနိုင်ပါ။ နောက်မှပြန်ကြိုးစားပါ။"
+    except:
+        return "System Error"
 
 def add_schedule_from_text(text):
-    import re
     date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
     time_match = re.search(r'(\d{1,2}:\d{2})', text)
     reminder_match = re.search(r'(\d+)\s*နာရီ', text)
@@ -100,12 +88,17 @@ def process_user_request(chat_id, user_text):
     
     text_lower = user_text.lower()
     
+    # အစီအစဉ်သိမ်းခြင်း - Gemini မပါဘဲ အရင်ဆုံးလုပ်မယ်
     if "အစီအစဉ်" in text_lower or "သတ်မှတ်" in text_lower or "မှတ်ထား" in text_lower:
-        return add_schedule_from_text(user_text)
+        result = add_schedule_from_text(user_text)
+        return result
+    
+    # စာရင်းတောင်းခြင်း
     elif "စာရင်း" in text_lower or "အစီရင်ခံ" in text_lower or "အကျဉ်းချုပ်" in text_lower:
         return database.get_daily_report()
+    
+    # ငွေစာရင်းထည့်ခြင်း
     elif "သုံးငွေ" in text_lower or "သုံးစွဲ" in text_lower:
-        import re
         numbers = re.findall(r'\d+', text)
         if numbers:
             amount = int(numbers[0])
@@ -115,8 +108,8 @@ def process_user_request(chat_id, user_text):
             desc = desc.replace("သုံးငွေ", "").replace("သုံးစွဲ", "").strip()
             return database.add_transaction("သုံးငွေ", amount, desc)
         return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    
     elif "ယူငွေ" in text_lower or "ဝင်ငွေ" in text_lower:
-        import re
         numbers = re.findall(r'\d+', text)
         if numbers:
             amount = int(numbers[0])
@@ -126,8 +119,8 @@ def process_user_request(chat_id, user_text):
             desc = desc.replace("ယူငွေ", "").replace("ဝင်ငွေ", "").strip()
             return database.add_transaction("ယူငွေ", amount, desc)
         return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    
     elif "ချေးငွေ" in text_lower:
-        import re
         numbers = re.findall(r'\d+', text)
         if numbers:
             amount = int(numbers[0])
@@ -137,8 +130,8 @@ def process_user_request(chat_id, user_text):
             desc = desc.replace("ချေးငွေ", "").strip()
             return database.add_transaction("ချေးငွေ", amount, desc)
         return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    
     elif "ပြန်ဆပ်" in text_lower:
-        import re
         numbers = re.findall(r'\d+', text)
         if numbers:
             amount = int(numbers[0])
@@ -148,17 +141,34 @@ def process_user_request(chat_id, user_text):
             desc = desc.replace("ပြန်ဆပ်", "").strip()
             return database.add_transaction("ပြန်ဆပ်ငွေ", amount, desc)
         return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    
+    # ပုံမှန် AI ပြန်ဖြေခြင်း
     else:
         return call_gemini(user_text)
+
+def check_and_send_reminders():
+    global MY_CHAT_ID
+    if MY_CHAT_ID is None:
+        return
+    try:
+        reminders = database.get_due_reminders()
+        for reminder_id, message in reminders:
+            send_telegram_message(MY_CHAT_ID, message)
+            database.mark_reminder_sent(reminder_id)
+            print(f"Reminder sent: {message}")
+    except Exception as e:
+        print(f"Reminder check error: {e}")
 
 def run_bot_polling():
     offset = 0
     print("Bot Polling Thread Started!")
     database.init_db()
+    
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_and_send_reminders, 'interval', minutes=1)
     scheduler.start()
     print("Scheduler started!")
+    
     while True:
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=15"
@@ -183,5 +193,6 @@ if __name__ == '__main__':
     bot_thread = threading.Thread(target=run_bot_polling)
     bot_thread.daemon = True
     bot_thread.start()
+    
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
