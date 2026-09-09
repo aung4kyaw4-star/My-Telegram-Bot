@@ -31,26 +31,47 @@ def send_telegram_message(chat_id, text):
         print(f"Telegram Send Error: {e}")
 
 def call_gemini(prompt_text):
-    # ဒီနေရာမှာ gemini-3.5-flash ကိုသုံးပါ
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={GEMINI_API_KEY}"
-    payload = {
-        "contents": [{
-            "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
-        }]
-    }
-    data = json.dumps(payload).encode('utf-8')
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
-    try:
-        with OPENER.open(req, timeout=30) as response:
-            res_data = json.loads(response.read().decode('utf-8'))
-            if 'error' in res_data:
-                return f"API Error: {res_data['error'].get('message', 'Unknown error')}"
-            return res_data['candidates'][0]['content']['parts'][0]['text']
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8')
-        return f"HTTP Error {e.code}: {error_body}"
-    except Exception as e:
-        return f"System Error: {str(e)}"
+    # Fallback Model များ - တစ်ခုမရရင် နောက်တစ်ခုကို ပြောင်းသုံးမယ်
+    models = [
+        "gemini-2.5-flash",
+        "gemini-3.6-flash",
+        "gemini-3.7-flash",
+        "gemini-flash-latest",
+        "gemini-2.5-flash-lite"
+    ]
+    
+    last_error = ""
+    for model in models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+            payload = {
+                "contents": [{
+                    "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
+                }]
+            }
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
+            
+            with OPENER.open(req, timeout=30) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                if 'error' in res_data:
+                    last_error = res_data['error'].get('message', 'Unknown error')
+                    print(f"Model {model} failed: {last_error}")
+                    continue
+                print(f"Using model: {model}")
+                return res_data['candidates'][0]['content']['parts'][0]['text']
+                
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode('utf-8')
+            last_error = f"{model}: {e.code} - {error_body}"
+            print(f"Model {model} failed: {last_error}")
+            continue
+        except Exception as e:
+            last_error = f"{model}: System Error - {str(e)}"
+            print(f"Model {model} failed: {last_error}")
+            continue
+    
+    return f"All models failed. Last error: {last_error}"
 
 def run_bot_polling():
     offset = 0
