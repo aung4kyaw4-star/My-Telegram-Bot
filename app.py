@@ -132,6 +132,41 @@ def process_user_request(chat_id, user_text):
         MY_CHAT_ID = str(chat_id)
         print(f"Chat ID saved: {MY_CHAT_ID}")
     
+    # ====== ဆရာရဲ့ Command တွေကို အရင်စစ်မယ် ======
+    text_lower = user_text.lower()
+    
+    # စာရင်းတောင်းတဲ့ Command တွေ
+    if text_lower in ["စာရင်း", "နေ့စာရင်း", "ဒီနေ့စာရင်း"]:
+        return database.get_full_daily_report()
+    
+    elif text_lower in ["မနေ့ကစာရင်း"]:
+        return database.get_detailed_report(days=1, months=0)
+    
+    elif text_lower in ["ဒီတစ်ပတ်စာရင်း", "တစ်ပတ်စာရင်း"]:
+        return database.get_detailed_report(days=7, months=0)
+    
+    elif text_lower in ["ဒီလစာရင်း", "လစာရင်း"]:
+        return database.get_detailed_report(days=0, months=1)
+    
+    elif text_lower in ["အကုန်စာရင်း", "အကုန်လုံး"]:
+        return database.get_detailed_report(days=9999, months=0)
+    
+    elif text_lower in ["ငွေစာရင်း"]:
+        return database.get_detailed_report(days=0, months=0)
+    
+    elif text_lower in ["အကြွေးစာရင်း", "အကြွေး"]:
+        return database.get_debt_details()
+    
+    elif text_lower in ["အလုပ်စာရင်း", "အလုပ်"]:
+        return database.get_category_report("work")
+    
+    elif text_lower in ["ကိုယ်ရေးစာရင်း", "ကိုယ်ရေး"]:
+        return database.get_category_report("personal")
+    
+    elif text_lower in ["အခြားစာရင်း", "အခြား"]:
+        return database.get_category_report("other")
+    
+    # ====== Gemini နဲ့ ခွဲထုတ်မယ် ======
     result = process_with_gemini(user_text)
     
     if not result:
@@ -139,6 +174,7 @@ def process_user_request(chat_id, user_text):
     
     action_type = result.get("type", "chat")
     
+    # ---- ငွေစာရင်းထည့်ခြင်း ----
     if action_type == "transaction":
         trans_type = result.get("transaction_type", "")
         amount = result.get("amount", 0)
@@ -151,6 +187,7 @@ def process_user_request(chat_id, user_text):
         
         return database.add_transaction(trans_type, amount, description, person, category)
     
+    # ---- မှတ်စုထည့်ခြင်း ----
     elif action_type == "note":
         category = result.get("category", "other")
         title = result.get("title", "")
@@ -161,6 +198,7 @@ def process_user_request(chat_id, user_text):
         
         return database.add_note(category, title, description)
     
+    # ---- အကြွေးပြန်ဆပ်ခြင်း ----
     elif action_type == "repay":
         person = result.get("person", "")
         amount = result.get("amount", 0)
@@ -170,6 +208,7 @@ def process_user_request(chat_id, user_text):
         
         return database.repay_debt(person, amount)
     
+    # ---- စာရင်းတောင်းခြင်း ----
     elif action_type == "report":
         report_type = result.get("report_type", "daily")
         
@@ -186,6 +225,7 @@ def process_user_request(chat_id, user_text):
         else:
             return database.get_full_daily_report()
     
+    # ---- အစီအစဉ်သိမ်းခြင်း ----
     elif action_type == "schedule":
         title = result.get("title", "အစည်းအဝေး")
         date = result.get("date", "")
@@ -197,6 +237,7 @@ def process_user_request(chat_id, user_text):
         
         return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
     
+    # ---- စကားပြော ----
     else:
         return result.get("message", "ဆရာ ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပေးပါဆရာ။")
 
