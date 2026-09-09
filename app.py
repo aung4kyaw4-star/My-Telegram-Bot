@@ -24,9 +24,51 @@ OPENER = urllib.request.build_opener()
 
 MY_CHAT_ID = None
 
-SYSTEM_PROMPT = """သင်သည် စနစ်ကျပြီး လေးစားမှုရှိသော ပရော်ဖက်ရှင်နယ် အမျိုးသမီး Executive Secretary ဖြစ်သည်။ 
-သုံးစွဲသူ၏ ငွေကြေးနှင့် လုပ်ငန်းအချက်အလက်များကို တိကျစွာ မှတ်သားပြီး စနစ်တကျ စီမံခန့်ခွဲရမည်။
-သုံးစွဲသူက ဘာမှမမေးဘဲ သို့မဟုတ် ဘာမှမတောင်းဆိုပါက သင်ကိုယ်တိုင် ဘာမှမပြောဘဲ နေရမည်။"""
+# System Prompt - Gemini ကို ဘယ်လိုခွဲထုတ်ရမလဲ သင်ပေးတယ်
+SYSTEM_PROMPT = """သင်သည် စနစ်ကျပြီး လေးစားမှုရှိသော ပရော်ဖက်ရှင်နယ် အမျိုးသမီး Executive Secretary ဖြစ်သည်။
+သုံးစွဲသူ၏ စာကို ခွဲခြမ်းစိတ်ဖြာပြီး အောက်ပါအတိုင်း JSON ပုံစံဖြင့် ပြန်ပေးရမည်။
+
+1. ငွေစာရင်းဆိုရင်:
+{
+    "type": "transaction",
+    "transaction_type": "သုံးငွေ/ယူငွေ/ချေးငွေ/ပြန်ဆပ်ငွေ",
+    "amount": 5000,
+    "description": "ကော်ဖီဆိုင်",
+    "person": "မောင်မောင်",
+    "date": "2026-09-09",
+    "time": "14:30"
+}
+
+2. အစီအစဉ်ဆိုရင်:
+{
+    "type": "schedule",
+    "title": "အစည်းအဝေး",
+    "date": "2026-09-10",
+    "time": "12:00",
+    "description": "မနက်ဖြန်အစည်းအဝေး",
+    "reminder_hours": 2
+}
+
+3. အကြွေးပြန်ဆပ်ရင်:
+{
+    "type": "repay",
+    "person": "မောင်မောင်",
+    "amount": 5000
+}
+
+4. စာရင်းတောင်းရင်:
+{
+    "type": "report",
+    "report_type": "daily/debts"
+}
+
+5. စကားပြောဆိုရင်:
+{
+    "type": "chat",
+    "message": "သင့်အဖြေ"
+}
+
+သုံးစွဲသူရဲ့ စာကို အပေါ်ပါပုံစံအတိုင်း ပြန်ပေးပါ။ မသေချာရင် "type": "chat" အနေနဲ့ ပြန်ပေးပါ။"""
 
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -39,6 +81,7 @@ def send_telegram_message(chat_id, text):
         print(f"Telegram Send Error: {e}")
 
 def call_gemini(prompt_text):
+    """Gemini ကိုခေါ်ပြီး JSON ပုံစံပြန်ယူမယ်"""
     try:
         models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
         for model in models:
@@ -58,27 +101,27 @@ def call_gemini(prompt_text):
                     return res_data['candidates'][0]['content']['parts'][0]['text']
             except:
                 continue
-        return "Gemini API ယာယီမရနိုင်ပါ။ နောက်မှပြန်ကြိုးစားပါ။"
+        return None
     except:
-        return "System Error"
+        return None
 
-def add_schedule_from_text(text):
-    date_match = re.search(r'(\d{4}-\d{2}-\d{2})', text)
-    time_match = re.search(r'(\d{1,2}:\d{2})', text)
-    reminder_match = re.search(r'(\d+)\s*နာရီ', text)
-    
-    if date_match and time_match:
-        date = date_match.group(1)
-        time = time_match.group(1)
-        title = text
-        title = title.replace(date, "").replace(time, "").strip()
-        if not title:
-            title = "အစည်းအဝေး"
-        reminder_hours = 2
-        if reminder_match:
-            reminder_hours = int(reminder_match.group(1))
-        return database.add_schedule_with_reminder(date, time, title, "", reminder_hours)
-    return "ကျေးဇူးပြုပြီး ရက်စွဲ (2026-09-10) နဲ့ အချိန် (12:00) ကို ထည့်သွင်းပေးပါ။"
+def process_with_gemini(user_text):
+    """Gemini နဲ့ စာကိုခွဲထုတ်ပြီး လုပ်ဆောင်မယ်"""
+    try:
+        gemini_response = call_gemini(user_text)
+        if not gemini_response:
+            return None
+        
+        # JSON ကိုရှာထုတ်မယ်
+        import re
+        json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
+        if not json_match:
+            return None
+        
+        data = json.loads(json_match.group())
+        return data
+    except:
+        return None
 
 def process_user_request(chat_id, user_text):
     global MY_CHAT_ID
@@ -86,65 +129,60 @@ def process_user_request(chat_id, user_text):
         MY_CHAT_ID = str(chat_id)
         print(f"Chat ID saved: {MY_CHAT_ID}")
     
-    text_lower = user_text.lower()
+    # Gemini နဲ့ စာကိုခွဲထုတ်မယ်
+    result = process_with_gemini(user_text)
     
-    # အစီအစဉ်သိမ်းခြင်း - Gemini မပါဘဲ အရင်ဆုံးလုပ်မယ်
-    if "အစီအစဉ်" in text_lower or "သတ်မှတ်" in text_lower or "မှတ်ထား" in text_lower:
-        result = add_schedule_from_text(user_text)
-        return result
+    if not result:
+        # Gemini မရရင် ပြန်မေးမယ်
+        return "ကျေးဇူးပြုပြီး ရက်စွဲ (YYYY-MM-DD) နဲ့ အချိန် (HH:MM) ကို ထည့်သွင်းပေးပါ။"
     
-    # စာရင်းတောင်းခြင်း
-    elif "စာရင်း" in text_lower or "အစီရင်ခံ" in text_lower or "အကျဉ်းချုပ်" in text_lower:
-        return database.get_daily_report()
+    action_type = result.get("type", "chat")
     
-    # ငွေစာရင်းထည့်ခြင်း
-    elif "သုံးငွေ" in text_lower or "သုံးစွဲ" in text_lower:
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            amount = int(numbers[0])
-            desc = text
-            for n in numbers:
-                desc = desc.replace(n, "")
-            desc = desc.replace("သုံးငွေ", "").replace("သုံးစွဲ", "").strip()
-            return database.add_transaction("သုံးငွေ", amount, desc)
-        return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    # ---- ငွေစာရင်းထည့်ခြင်း ----
+    if action_type == "transaction":
+        trans_type = result.get("transaction_type", "")
+        amount = result.get("amount", 0)
+        description = result.get("description", "")
+        person = result.get("person", "")
+        
+        if amount <= 0:
+            return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+        
+        return database.add_transaction(trans_type, amount, description, person)
     
-    elif "ယူငွေ" in text_lower or "ဝင်ငွေ" in text_lower:
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            amount = int(numbers[0])
-            desc = text
-            for n in numbers:
-                desc = desc.replace(n, "")
-            desc = desc.replace("ယူငွေ", "").replace("ဝင်ငွေ", "").strip()
-            return database.add_transaction("ယူငွေ", amount, desc)
-        return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    # ---- အစီအစဉ်သိမ်းခြင်း ----
+    elif action_type == "schedule":
+        title = result.get("title", "အစည်းအဝေး")
+        date = result.get("date", "")
+        time_val = result.get("time", "")
+        reminder_hours = result.get("reminder_hours", 2)
+        
+        if not date or not time_val:
+            return "ကျေးဇူးပြုပြီး ရက်စွဲ (YYYY-MM-DD) နဲ့ အချိန် (HH:MM) ကို ထည့်သွင်းပေးပါ။"
+        
+        return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
     
-    elif "ချေးငွေ" in text_lower:
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            amount = int(numbers[0])
-            desc = text
-            for n in numbers:
-                desc = desc.replace(n, "")
-            desc = desc.replace("ချေးငွေ", "").strip()
-            return database.add_transaction("ချေးငွေ", amount, desc)
-        return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    # ---- အကြွေးပြန်ဆပ်ခြင်း ----
+    elif action_type == "repay":
+        person = result.get("person", "")
+        amount = result.get("amount", 0)
+        
+        if not person or amount <= 0:
+            return "ကျေးဇူးပြုပြီး လူအမည်နဲ့ ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+        
+        return database.repay_debt(person, amount)
     
-    elif "ပြန်ဆပ်" in text_lower:
-        numbers = re.findall(r'\d+', text)
-        if numbers:
-            amount = int(numbers[0])
-            desc = text
-            for n in numbers:
-                desc = desc.replace(n, "")
-            desc = desc.replace("ပြန်ဆပ်", "").strip()
-            return database.add_transaction("ပြန်ဆပ်ငွေ", amount, desc)
-        return "ကျေးဇူးပြုပြီး ငွေပမာဏကို ထည့်သွင်းပေးပါ။"
+    # ---- စာရင်းတောင်းခြင်း ----
+    elif action_type == "report":
+        report_type = result.get("report_type", "daily")
+        if report_type == "debts":
+            return database.get_all_debts()
+        else:
+            return database.get_daily_report()
     
-    # ပုံမှန် AI ပြန်ဖြေခြင်း
+    # ---- စကားပြော ----
     else:
-        return call_gemini(user_text)
+        return result.get("message", "ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပါ။")
 
 def check_and_send_reminders():
     global MY_CHAT_ID
