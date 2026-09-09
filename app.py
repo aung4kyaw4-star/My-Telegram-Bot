@@ -24,51 +24,57 @@ OPENER = urllib.request.build_opener()
 
 MY_CHAT_ID = None
 
-# System Prompt - Gemini ကို ဘယ်လိုခွဲထုတ်ရမလဲ သင်ပေးတယ်
 SYSTEM_PROMPT = """သင်သည် စနစ်ကျပြီး လေးစားမှုရှိသော ပရော်ဖက်ရှင်နယ် အမျိုးသမီး Executive Secretary ဖြစ်သည်။
 သုံးစွဲသူ၏ စာကို ခွဲခြမ်းစိတ်ဖြာပြီး အောက်ပါအတိုင်း JSON ပုံစံဖြင့် ပြန်ပေးရမည်။
 
-1. ငွေစာရင်းဆိုရင်:
+၁။ ငွေစာရင်းဆိုရင် (သုံးငွေ၊ ယူငွေ၊ ချေးငွေ၊ ပြန်ဆပ်ငွေ):
 {
     "type": "transaction",
     "transaction_type": "သုံးငွေ/ယူငွေ/ချေးငွေ/ပြန်ဆပ်ငွေ",
     "amount": 5000,
     "description": "ကော်ဖီဆိုင်",
-    "person": "မောင်မောင်",
-    "date": "2026-09-09",
-    "time": "14:30"
+    "person": "မောင်မောင်"
 }
 
-2. အစီအစဉ်ဆိုရင်:
+မှတ်ချက် - "သုံးငွေ", "သုံးစွဲ", "အသုံး" ဆိုတာတွေက "သုံးငွေ"
+"ယူငွေ", "ဝင်ငွေ", "ရငွေ" ဆိုတာတွေက "ယူငွေ"
+"ချေးငွေ", "ချေး", "ငှား" ဆိုတာတွေက "ချေးငွေ"
+"ပြန်ဆပ်", "ပြန်", "ဆပ်" ဆိုတာတွေက "ပြန်ဆပ်ငွေ"
+
+၂။ အစီအစဉ်ဆိုရင် (ရက်စွဲနဲ့ အချိန်ပါတဲ့စာ):
 {
     "type": "schedule",
     "title": "အစည်းအဝေး",
     "date": "2026-09-10",
     "time": "12:00",
-    "description": "မနက်ဖြန်အစည်းအဝေး",
     "reminder_hours": 2
 }
 
-3. အကြွေးပြန်ဆပ်ရင်:
+၃။ အကြွေးပြန်ဆပ်ရင်:
 {
     "type": "repay",
     "person": "မောင်မောင်",
     "amount": 5000
 }
 
-4. စာရင်းတောင်းရင်:
+၄။ စာရင်းတောင်းရင်:
 {
     "type": "report",
-    "report_type": "daily/debts"
+    "report_type": "daily"
+}
+{
+    "type": "report",
+    "report_type": "debts"
 }
 
-5. စကားပြောဆိုရင်:
+၅။ စကားပြောဆိုရင်:
 {
     "type": "chat",
     "message": "သင့်အဖြေ"
 }
 
-သုံးစွဲသူရဲ့ စာကို အပေါ်ပါပုံစံအတိုင်း ပြန်ပေးပါ။ မသေချာရင် "type": "chat" အနေနဲ့ ပြန်ပေးပါ။"""
+အရေးကြီး - သုံးစွဲသူရဲ့စာမှာ ရက်စွဲနဲ့ အချိန်မပါရင်လည်း ငွေစာရင်းဆိုရင် မှတ်ပေးပါ။
+သုံးစွဲသူရဲ့ စာကို အပေါ်ပါပုံစံအတိုင်း JSON ပြန်ပေးပါ။"""
 
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -81,7 +87,6 @@ def send_telegram_message(chat_id, text):
         print(f"Telegram Send Error: {e}")
 
 def call_gemini(prompt_text):
-    """Gemini ကိုခေါ်ပြီး JSON ပုံစံပြန်ယူမယ်"""
     try:
         models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
         for model in models:
@@ -106,14 +111,11 @@ def call_gemini(prompt_text):
         return None
 
 def process_with_gemini(user_text):
-    """Gemini နဲ့ စာကိုခွဲထုတ်ပြီး လုပ်ဆောင်မယ်"""
     try:
         gemini_response = call_gemini(user_text)
         if not gemini_response:
             return None
         
-        # JSON ကိုရှာထုတ်မယ်
-        import re
         json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
         if not json_match:
             return None
@@ -133,8 +135,7 @@ def process_user_request(chat_id, user_text):
     result = process_with_gemini(user_text)
     
     if not result:
-        # Gemini မရရင် ပြန်မေးမယ်
-        return "ကျေးဇူးပြုပြီး ရက်စွဲ (YYYY-MM-DD) နဲ့ အချိန် (HH:MM) ကို ထည့်သွင်းပေးပါ။"
+        return "ကျေးဇူးပြုပြီး ရက်စွဲ (2026-09-10) နဲ့ အချိန် (12:00) ကို ထည့်သွင်းပေးပါ။"
     
     action_type = result.get("type", "chat")
     
@@ -158,7 +159,7 @@ def process_user_request(chat_id, user_text):
         reminder_hours = result.get("reminder_hours", 2)
         
         if not date or not time_val:
-            return "ကျေးဇူးပြုပြီး ရက်စွဲ (YYYY-MM-DD) နဲ့ အချိန် (HH:MM) ကို ထည့်သွင်းပေးပါ။"
+            return "ကျေးဇူးပြုပြီး ရက်စွဲ (2026-09-10) နဲ့ အချိန် (12:00) ကို ထည့်သွင်းပေးပါ။"
         
         return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
     
@@ -176,9 +177,9 @@ def process_user_request(chat_id, user_text):
     elif action_type == "report":
         report_type = result.get("report_type", "daily")
         if report_type == "debts":
-            return database.get_all_debts()
+            return database.get_debt_details()
         else:
-            return database.get_daily_report()
+            return database.get_detailed_report(days=0, months=0)
     
     # ---- စကားပြော ----
     else:
