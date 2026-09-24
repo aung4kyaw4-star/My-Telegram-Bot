@@ -3,18 +3,13 @@ import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Database URL
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///finance.db')
-
-# Render PostgreSQL URL ကို ပြင်ခြင်း
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 engine = create_engine(DATABASE_URL, echo=False)
 Base = declarative_base()
 SessionLocal = sessionmaker(bind=engine)
-
-# ============ Models ============
 
 class Transaction(Base):
     __tablename__ = 'transactions'
@@ -58,8 +53,6 @@ class Reminder(Base):
     message = Column(Text)
     is_sent = Column(Integer, default=0)
 
-# ============ Functions ============
-
 def init_db():
     Base.metadata.create_all(engine)
     print("✅ Database initialized!")
@@ -99,7 +92,6 @@ def add_note(category, title, description=""):
         )
         session.add(note)
         session.commit()
-        
         category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
         cat_name = category_names.get(category, category)
         return format_response(f"✅ ဆရာရဲ့ {cat_name} '{title}' ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
@@ -110,11 +102,8 @@ def add_schedule_with_reminder(date, time, title, description="", reminder_hours
     session = SessionLocal()
     try:
         schedule = Schedule(
-            date=date,
-            time=time,
-            title=title,
-            description=description,
-            reminder_hours=reminder_hours
+            date=date, time=time, title=title,
+            description=description, reminder_hours=reminder_hours
         )
         session.add(schedule)
         session.commit()
@@ -130,7 +119,6 @@ def add_schedule_with_reminder(date, time, title, description="", reminder_hours
         )
         session.add(reminder)
         session.commit()
-        
         return format_response(f"✅ ဆရာရဲ့ အစီအစဉ် '{title}' ကို {date} {time} တွင် အကျွန်မှတ်သားပြီး အချိန်မှန်သတိပေးပါမည်ဆရာ။")
     finally:
         session.close()
@@ -184,7 +172,6 @@ def get_full_daily_report():
             summary[t.type] += t.amount
         
         report = f"📊 **{today} နေ့စဉ် အပြည့်အစုံ အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now}\n\n"
-        
         report += "💰 **ငွေစာရင်း**\n"
         total_in = 0
         total_out = 0
@@ -245,6 +232,9 @@ def get_detailed_report(days=0, months=0):
             start_date = today - timedelta(days=30*months)
             start_str = start_date.strftime("%Y-%m-%d")
             title = f"လွန်ခဲ့တဲ့ {months} လ"
+        elif days > 1000:
+            start_str = "2000-01-01"
+            title = "အကုန်စာရင်း"
         elif days > 0:
             start_date = today - timedelta(days=days)
             start_str = start_date.strftime("%Y-%m-%d")
@@ -274,7 +264,6 @@ def get_detailed_report(days=0, months=0):
             summary[t.type] += t.amount
         
         report = f"📊 **{title} အသေးစိတ် အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now.strftime('%Y-%m-%d %H:%M')}\n\n"
-        
         report += "💰 **ငွေစာရင်း အကျဉ်းချုပ်**\n"
         total_in = 0
         total_out = 0
@@ -351,7 +340,6 @@ def get_debt_details():
             Transaction.type == 'ချေးငွေ',
             Transaction.status == 'active'
         ).all()
-        
         repayments = session.query(Transaction).filter(
             Transaction.type == 'ပြန်ဆပ်ငွေ',
             Transaction.status == 'active'
@@ -393,7 +381,6 @@ def get_debt_for_person(person):
             Transaction.person == person,
             Transaction.status == 'active'
         ).all()
-        
         total = sum(d.amount for d in debts)
         return total if total else 0
     finally:
