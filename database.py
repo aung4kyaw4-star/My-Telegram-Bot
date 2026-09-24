@@ -151,24 +151,35 @@ def mark_reminder_sent(reminder_id):
     conn.commit()
     conn.close()
 
+# ============================================================
+# ဒီနေ့ အပြည့်အစုံ အစီရင်ခံစာ (အစီအစဉ်ပါ ထည့်ပြီး)
+# ============================================================
 def get_full_daily_report():
     conn = sqlite3.connect('finance.db')
     c = conn.cursor()
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     
+    # ငွေစာရင်း
     c.execute("""SELECT type, SUM(amount) FROM transactions WHERE date = ? AND status = 'active' GROUP BY type""", (today,))
     summary = c.fetchall()
     
     c.execute("""SELECT date, time, type, amount, description, person, category FROM transactions WHERE date = ? AND status = 'active' ORDER BY time DESC""", (today,))
     transactions = c.fetchall()
     
+    # မှတ်စု
     c.execute("""SELECT category, title, description, time FROM notes WHERE date = ? AND status = 'active' ORDER BY time DESC""", (today,))
     notes = c.fetchall()
+    
+    # ✅ အစီအစဉ် (ဒီအပိုင်းကို အသစ်ထည့်ထားပါတယ်)
+    c.execute("""SELECT time, title, description FROM schedules WHERE date = ? ORDER BY time ASC""", (today,))
+    schedules = c.fetchall()
+    
     conn.close()
     
     report = f"📊 **{today} နေ့စဉ် အပြည့်အစုံ အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now}\n\n"
     
+    # ====== ငွေစာရင်း ======
     report += "💰 **ငွေစာရင်း**\n"
     total_in = 0
     total_out = 0
@@ -199,6 +210,17 @@ def get_full_daily_report():
     else:
         report += "  ဒီနေ့ငွေစာရင်းမရှိပါ။\n"
     
+    # ====== အစီအစဉ် (အသစ်) ======
+    if schedules:
+        report += "\n📅 **ဒီနေ့ အစီအစဉ်များ**\n"
+        for time_val, title, description in schedules:
+            report += f"  ⏰ {time_val} - {title}\n"
+            if description:
+                report += f"     📝 {description}\n"
+    else:
+        report += "\n📅 ဒီနေ့အတွက် သတ်မှတ်ထားတဲ့ အစီအစဉ်မရှိပါ။\n"
+    
+    # ====== မှတ်စု ======
     if notes:
         report += "\n📝 **မှတ်စုများ**\n"
         category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
@@ -212,6 +234,9 @@ def get_full_daily_report():
     
     return format_response(report)
 
+# ============================================================
+# အချိန်ကာလအလိုက် အသေးစိတ်စာရင်း (အစီအစဉ်ပါ ထည့်ပြီး)
+# ============================================================
 def get_detailed_report(days=0, months=0):
     conn = sqlite3.connect('finance.db')
     c = conn.cursor()
@@ -231,18 +256,26 @@ def get_detailed_report(days=0, months=0):
         start_str = today.strftime("%Y-%m-%d")
         title = "ဒီနေ့"
     
+    # ငွေစာရင်း
     c.execute("""SELECT date, time, type, amount, description, person, category FROM transactions WHERE date >= ? AND status = 'active' ORDER BY date DESC, time DESC""", (start_str,))
     transactions = c.fetchall()
     
     c.execute("""SELECT type, SUM(amount) FROM transactions WHERE date >= ? AND status = 'active' GROUP BY type""", (start_str,))
     summary = c.fetchall()
     
+    # မှတ်စု
     c.execute("""SELECT date, time, category, title, description FROM notes WHERE date >= ? AND status = 'active' ORDER BY date DESC, time DESC""", (start_str,))
     notes = c.fetchall()
+    
+    # ✅ အစီအစဉ် (ဒီအပိုင်းကို အသစ်ထည့်ထားပါတယ်)
+    c.execute("""SELECT date, time, title, description FROM schedules WHERE date >= ? ORDER BY date ASC, time ASC""", (start_str,))
+    schedules = c.fetchall()
+    
     conn.close()
     
     report = f"📊 **{title} အသေးစိတ် အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now.strftime('%Y-%m-%d %H:%M')}\n\n"
     
+    # ====== ငွေစာရင်းအကျဉ်းချုပ် ======
     report += "💰 **ငွေစာရင်း အကျဉ်းချုပ်**\n"
     total_in = 0
     total_out = 0
@@ -260,6 +293,7 @@ def get_detailed_report(days=0, months=0):
             report += f"  {t}: {summary_dict[t]} ကျပ်\n"
     report += f"\n  📈 ဝင်ငွေ: {total_in} ကျပ်\n  📉 ထွက်ငွေ: {total_out} ကျပ်\n  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
     
+    # ====== ငွေစာရင်းအသေးစိတ် ======
     if transactions:
         report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
         for t in transactions:
@@ -273,6 +307,15 @@ def get_detailed_report(days=0, months=0):
     else:
         report += "  ငွေစာရင်းမရှိပါ။\n"
     
+    # ====== အစီအစဉ်များ (အသစ်) ======
+    if schedules:
+        report += "\n📅 **အစီအစဉ်များ**\n"
+        for date, time_val, title, description in schedules:
+            report += f"\n  📅 {date} ({time_val})\n  📌 {title}\n"
+            if description:
+                report += f"  📝 {description}\n"
+    
+    # ====== မှတ်စုများ ======
     if notes:
         report += "\n📝 **မှတ်စုများ**\n"
         category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
