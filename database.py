@@ -3,6 +3,13 @@ import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+# ✅ မြန်မာ Timezone (UTC+6:30)
+MYANMAR_TZ = datetime.timezone(datetime.timedelta(hours=6, minutes=30))
+
+def get_now():
+    """မြန်မာအချိန် ရယူခြင်း"""
+    return datetime.datetime.now(MYANMAR_TZ)
+
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///finance.db')
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -22,7 +29,7 @@ class Transaction(Base):
     person = Column(String(255))
     category = Column(String(50))
     status = Column(String(20), default='active')
-    created_at = Column(DateTime, default=datetime.datetime.now)
+    created_at = Column(DateTime, default=get_now)
 
 class Note(Base):
     __tablename__ = 'notes'
@@ -33,7 +40,7 @@ class Note(Base):
     title = Column(String(255))
     description = Column(Text)
     status = Column(String(20), default='active')
-    created_at = Column(DateTime, default=datetime.datetime.now)
+    created_at = Column(DateTime, default=get_now)
 
 class Schedule(Base):
     __tablename__ = 'schedules'
@@ -43,7 +50,7 @@ class Schedule(Base):
     title = Column(String(255))
     description = Column(Text)
     reminder_hours = Column(Integer, default=2)
-    created_at = Column(DateTime, default=datetime.datetime.now)
+    created_at = Column(DateTime, default=get_now)
 
 class Reminder(Base):
     __tablename__ = 'reminders'
@@ -63,7 +70,7 @@ def format_response(message):
 def add_transaction(transaction_type, amount, description="", person="", category=""):
     session = SessionLocal()
     try:
-        now = datetime.datetime.now()
+        now = get_now()
         trans = Transaction(
             date=now.strftime("%Y-%m-%d"),
             time=now.strftime("%H:%M:%S"),
@@ -82,7 +89,7 @@ def add_transaction(transaction_type, amount, description="", person="", categor
 def add_note(category, title, description=""):
     session = SessionLocal()
     try:
-        now = datetime.datetime.now()
+        now = get_now()
         note = Note(
             date=now.strftime("%Y-%m-%d"),
             time=now.strftime("%H:%M:%S"),
@@ -108,8 +115,8 @@ def add_schedule_with_reminder(date, time, title, description="", reminder_hours
         session.add(schedule)
         session.commit()
         
-        from datetime import datetime, timedelta
-        event_datetime = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+        from datetime import datetime as dt, timedelta
+        event_datetime = dt.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
         reminder_datetime = event_datetime - timedelta(hours=reminder_hours)
         
         reminder = Reminder(
@@ -126,7 +133,7 @@ def add_schedule_with_reminder(date, time, title, description="", reminder_hours
 def get_due_reminders():
     session = SessionLocal()
     try:
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        now = get_now().strftime("%Y-%m-%d %H:%M")
         reminders = session.query(Reminder).filter(
             Reminder.reminder_time <= now,
             Reminder.is_sent == 0
@@ -148,8 +155,9 @@ def mark_reminder_sent(reminder_id):
 def get_full_daily_report():
     session = SessionLocal()
     try:
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        now_dt = get_now()
+        today = now_dt.strftime("%Y-%m-%d")
+        now = now_dt.strftime("%Y-%m-%d %H:%M")
         
         transactions = session.query(Transaction).filter(
             Transaction.date == today,
@@ -224,8 +232,8 @@ def get_full_daily_report():
 def get_detailed_report(days=0, months=0):
     session = SessionLocal()
     try:
-        from datetime import datetime, timedelta
-        now = datetime.datetime.now()
+        from datetime import timedelta
+        now = get_now()
         today = now.date()
         
         if months > 0:
@@ -420,7 +428,7 @@ def delete_all_transactions():
 def delete_today_transactions():
     session = SessionLocal()
     try:
-        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        today = get_now().strftime("%Y-%m-%d")
         session.query(Transaction).filter(Transaction.date == today).delete()
         session.query(Note).filter(Note.date == today).delete()
         session.commit()
