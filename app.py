@@ -23,6 +23,9 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 OPENER = urllib.request.build_opener()
 MY_CHAT_ID = None
 
+# ============ User State (Duplicate အတည်ပြုချက်အတွက်) ============
+user_states = {}
+
 
 # ============ Telegram Send Functions ============
 
@@ -146,12 +149,11 @@ def create_delete_menu():
     }
 
 
-# ============ Handle Callback (ခလုတ်နှိပ်တဲ့အခါ) ============
+# ============ Handle Callback ============
 
 def handle_callback(chat_id, data):
     print(f"Callback received: {data}")
 
-    # ---- မီနူးများ ----
     if data == "back_main":
         send_telegram_message(chat_id, "ဆရာ ဘာလုပ်ချင်ပါသလဲ။", create_main_menu())
 
@@ -258,7 +260,50 @@ def process_user_request(chat_id, user_text):
         MY_CHAT_ID = str(chat_id)
         print(f"Chat ID saved: {MY_CHAT_ID}")
 
-    text_lower = user_text.lower()
+    text_lower = user_text.lower().strip()
+    chat_id_str = str(chat_id)
+
+    # ====== Duplicate အတည်ပြုချက် စစ်ဆေးခြင်း ======
+    if chat_id_str in user_states:
+        state = user_states[chat_id_str]
+        if state.get("action") == "waiting_duplicate_confirm":
+            if "ထပ်မှတ်" in text_lower or "yes" in text_lower or "ok" in text_lower:
+                pending = state["pending_data"]
+                if pending["type"] == "note":
+                    reply = database.add_note(
+                        pending["category"],
+                        pending["title"],
+                        pending.get("description", "")
+                    )
+                elif pending["type"] == "transaction":
+                    reply = database.add_transaction(
+                        pending["trans_type"],
+                        pending["amount"],
+                        pending.get("description", ""),
+                        pending.get("person", "")
+                    )
+                elif pending["type"] == "schedule":
+                    reply = database.add_schedule_with_reminder(
+                        pending["date"],
+                        pending["time_val"],
+                        pending["title"],
+                        "",
+                        pending.get("reminder_hours", 2)
+                    )
+                else:
+                    reply = "⚠️ မမှတ်နိုင်ပါ။"
+
+                del user_states[chat_id_str]
+                send_telegram_message(chat_id, reply, create_main_menu())
+                return
+            else:
+                del user_states[chat_id_str]
+                send_telegram_message(
+                    chat_id,
+                    "✅ ဆရာ ထပ်မမှတ်တော့ပါဘူး။",
+                    create_main_menu()
+                )
+                return
 
     # ====== ၁။ အစီအစဉ် ======
     if "အစီအစဉ်" in text_lower or "အစည်းအဝေး" in text_lower:
@@ -279,14 +324,31 @@ def process_user_request(chat_id, user_text):
             if not title:
                 title = "အစည်းအဝေး"
 
+            if database.check_duplicate_schedule(date, time_val, title):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "schedule",
+                        "date": date,
+                        "time_val": time_val,
+                        "title": title,
+                        "reminder_hours": reminder_hours
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီအစီအစဉ် '{title}' ကို {date} {time_val} တွင် မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
+
             reply = database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
         else:
             send_telegram_message(
                 chat_id,
-                "ဆရာ ရက်စွဲ (2026-09-25) နဲ့ အချိန် (09:00) ကို ထည့်ပေးပါဆရာ။\n\n"
-                "ဥပမာ - `2026-09-25 09:00 အစည်းအဝေး 2 နာရီအလိုသတိပေးပါ`",
+                "ဆရာ ရက်စွဲ (2026-09-25) နဲ့ အချိန် (09:00) ကို ထည့်ပေးပါဆရာ။",
                 create_main_menu()
             )
             return
@@ -300,6 +362,24 @@ def process_user_request(chat_id, user_text):
             for n in numbers:
                 desc = desc.replace(n, "")
             desc = desc.replace("သုံးငွေ", "").replace("သုံးစွဲ", "").strip()
+
+            if database.check_duplicate_transaction("သုံးငွေ", amount, desc):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "transaction",
+                        "trans_type": "သုံးငွေ",
+                        "amount": amount,
+                        "description": desc
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီငွေစာရင်း 'သုံးငွေ {amount} ကျပ် ({desc})' ကို ဒီနေ့ မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
+
             reply = database.add_transaction("သုံးငွေ", amount, desc)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
@@ -315,6 +395,24 @@ def process_user_request(chat_id, user_text):
             for n in numbers:
                 desc = desc.replace(n, "")
             desc = desc.replace("ယူငွေ", "").replace("ဝင်ငွေ", "").strip()
+
+            if database.check_duplicate_transaction("ယူငွေ", amount, desc):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "transaction",
+                        "trans_type": "ယူငွေ",
+                        "amount": amount,
+                        "description": desc
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီငွေစာရင်း 'ယူငွေ {amount} ကျပ် ({desc})' ကို ဒီနေ့ မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
+
             reply = database.add_transaction("ယူငွေ", amount, desc)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
@@ -337,6 +435,25 @@ def process_user_request(chat_id, user_text):
                         person = part
                         break
             desc = desc.replace("ချေးငွေ", "").replace("ချေး", "").strip()
+
+            if database.check_duplicate_transaction("ချေးငွေ", amount, desc, person):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "transaction",
+                        "trans_type": "ချေးငွေ",
+                        "amount": amount,
+                        "description": desc,
+                        "person": person
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီငွေစာရင်း 'ချေးငွေ {amount} ကျပ်' ကို ဒီနေ့ မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
+
             if person:
                 reply = database.add_transaction("ချေးငွေ", amount, desc, person)
             else:
@@ -421,6 +538,21 @@ def process_user_request(chat_id, user_text):
     if "အလုပ်" in text_lower:
         title = user_text.replace("အလုပ်", "").strip()
         if title:
+            if database.check_duplicate_note("work", title):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "note",
+                        "category": "work",
+                        "title": title
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီမှတ်စု 'အလုပ် {title}' ကို မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
             reply = database.add_note("work", title)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
@@ -430,6 +562,21 @@ def process_user_request(chat_id, user_text):
     if "ကိုယ်ရေး" in text_lower:
         title = user_text.replace("ကိုယ်ရေး", "").strip()
         if title:
+            if database.check_duplicate_note("personal", title):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "note",
+                        "category": "personal",
+                        "title": title
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီမှတ်စု 'ကိုယ်ရေး {title}' ကို မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
             reply = database.add_note("personal", title)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
@@ -439,13 +586,28 @@ def process_user_request(chat_id, user_text):
     if "အခြား" in text_lower:
         title = user_text.replace("အခြား", "").strip()
         if title:
+            if database.check_duplicate_note("other", title):
+                user_states[chat_id_str] = {
+                    "action": "waiting_duplicate_confirm",
+                    "pending_data": {
+                        "type": "note",
+                        "category": "other",
+                        "title": title
+                    }
+                }
+                send_telegram_message(
+                    chat_id,
+                    f"⚠️ ဆရာ ဒီမှတ်စု 'အခြား {title}' ကို မှတ်ထားပြီးသားပါဆရာ။\n\nထပ်မှတ်ချင်လား?\n• 'ထပ်မှတ်' - ထပ်မှတ်မယ်\n• 'မမှတ်' - မမှတ်ဘူး",
+                    create_main_menu()
+                )
+                return
             reply = database.add_note("other", title)
             send_telegram_message(chat_id, reply, create_main_menu())
             return
         send_telegram_message(chat_id, "ဆရာ အခြားကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။", create_note_menu())
         return
 
-    # ====== ၈။ နားမလည်ရင် မီနူးပြမယ် ======
+    # ====== ၈။ နားမလည်ရင် ======
     send_telegram_message(
         chat_id,
         "ဆရာ ဘာလုပ်ချင်ပါသလဲ။ အောက်က ခလုတ်တွေကို နှိပ်ကြည့်ပါ။",
