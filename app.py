@@ -21,65 +21,17 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 OPENER = urllib.request.build_opener()
-
 MY_CHAT_ID = None
 
-SYSTEM_PROMPT = """သင်သည် ယဉ်ကျေးပျူငှာပြီး စနစ်ကျတဲ့ အမျိုးသမီး Executive Secretary ဖြစ်ပါတယ်။
-သုံးစွဲသူကို "ဆရာ" လို့ခေါ်ပြီး ကိုယ့်ကိုယ်ကို "အကျွန်" လို့သုံးပါ။
 
-သုံးစွဲသူရဲ့ စာကို ခွဲခြမ်းစိတ်ဖြာပြီး အောက်ပါအတိုင်း JSON ပုံစံဖြင့် ပြန်ပေးပါ။
+# ============ Telegram Send Functions ============
 
-၁။ ငွေစာရင်းဆိုရင်:
-{
-    "type": "transaction",
-    "transaction_type": "သုံးငွေ/ယူငွေ/ချေးငွေ/ပြန်ဆပ်ငွေ",
-    "amount": 5000,
-    "description": "ကော်ဖီဆိုင်",
-    "person": "မောင်မောင်"
-}
-
-၂။ မှတ်စုဆိုရင် (အလုပ်၊ ကိုယ်ရေး၊ အခြား):
-{
-    "type": "note",
-    "category": "work/personal/other",
-    "title": "ခေါင်းစဉ်",
-    "description": "အသေးစိတ်"
-}
-
-၃။ အကြွေးပြန်ဆပ်ရင်:
-{
-    "type": "repay",
-    "person": "မောင်မောင်",
-    "amount": 5000
-}
-
-၄။ စာရင်းတောင်းရင်:
-{
-    "type": "report",
-    "report_type": "daily/yesterday/week/month/debts"
-}
-
-၅။ အစီအစဉ်ဆိုရင်:
-{
-    "type": "schedule",
-    "title": "အစည်းအဝေး",
-    "date": "2026-09-10",
-    "time": "12:00",
-    "reminder_hours": 2
-}
-
-၆။ စကားပြောဆိုရင်:
-{
-    "type": "chat",
-    "message": "သင့်အဖြေ"
-}
-
-အရေးကြီး - "အလုပ်" ဆိုရင် category: "work", "ကိုယ်ရေး" ဆိုရင် "personal", "အခြား" ဆိုရင် "other" လို့သုံးပါ။
-သုံးစွဲသူရဲ့ စာကို အပေါ်ပါပုံစံအတိုင်း JSON ပြန်ပေးပါ။"""
-
-def send_telegram_message(chat_id, text):
+def send_telegram_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = json.dumps({"chat_id": chat_id, "text": text}).encode('utf-8')
+    payload_data = {"chat_id": chat_id, "text": text}
+    if reply_markup:
+        payload_data["reply_markup"] = reply_markup
+    payload = json.dumps(payload_data).encode('utf-8')
     req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
     try:
         with OPENER.open(req, timeout=10) as response:
@@ -87,80 +39,259 @@ def send_telegram_message(chat_id, text):
     except Exception as e:
         print(f"Telegram Send Error: {e}")
 
-def call_gemini(prompt_text):
-    try:
-        models = ["gemini-2.5-flash", "gemini-3.6-flash", "gemini-flash-latest"]
-        for model in models:
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": f"{SYSTEM_PROMPT}\n\nUser: {prompt_text}"}]
-                    }]
-                }
-                data = json.dumps(payload).encode('utf-8')
-                req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
-                with OPENER.open(req, timeout=30) as response:
-                    res_data = json.loads(response.read().decode('utf-8'))
-                    if 'error' in res_data:
-                        continue
-                    return res_data['candidates'][0]['content']['parts'][0]['text']
-            except:
-                continue
-        return None
-    except:
-        return None
 
-def process_with_gemini(user_text):
+def answer_callback(callback_id):
     try:
-        gemini_response = call_gemini(user_text)
-        if not gemini_response:
-            return None
-        
-        json_match = re.search(r'\{.*\}', gemini_response, re.DOTALL)
-        if not json_match:
-            return None
-        
-        data = json.loads(json_match.group())
-        return data
-    except:
-        return None
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
+        payload = json.dumps({"callback_query_id": callback_id}).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+        with OPENER.open(req, timeout=5) as response:
+            pass
+    except Exception as e:
+        print(f"Answer callback error: {e}")
+
+
+# ============ Keyboard Menus ============
+
+def create_main_menu():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📊 စာရင်းကြည့်မယ်", "callback_data": "report_menu"},
+                {"text": "💰 ငွေထည့်မယ်", "callback_data": "money_menu"}
+            ],
+            [
+                {"text": "📝 မှတ်စုထည့်မယ်", "callback_data": "note_menu"},
+                {"text": "🗑️ ဖျက်မယ်", "callback_data": "delete_menu"}
+            ],
+            [
+                {"text": "📋 အကြွေးစာရင်း", "callback_data": "report_debts"},
+                {"text": "📅 အစီအစဉ်သတ်မှတ်", "callback_data": "schedule_help"}
+            ]
+        ]
+    }
+
+
+def create_report_menu():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📊 ဒီနေ့", "callback_data": "report_daily"},
+                {"text": "📊 မနေ့က", "callback_data": "report_yesterday"}
+            ],
+            [
+                {"text": "📊 ဒီတစ်ပတ်", "callback_data": "report_week"},
+                {"text": "📊 ဒီလ", "callback_data": "report_month"}
+            ],
+            [
+                {"text": "📊 အကုန်စာရင်း", "callback_data": "report_all"},
+                {"text": "🔙 နောက်သို့", "callback_data": "back_main"}
+            ]
+        ]
+    }
+
+
+def create_money_menu():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "💸 သုံးငွေ", "callback_data": "type_သုံးငွေ"},
+                {"text": "💹 ယူငွေ", "callback_data": "type_ယူငွေ"}
+            ],
+            [
+                {"text": "💳 ချေးငွေ", "callback_data": "type_ချေးငွေ"},
+                {"text": "🔄 ပြန်ဆပ်ငွေ", "callback_data": "type_ပြန်ဆပ်ငွေ"}
+            ],
+            [
+                {"text": "🔙 နောက်သို့", "callback_data": "back_main"}
+            ]
+        ]
+    }
+
+
+def create_note_menu():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "💼 အလုပ်ကိစ္စ", "callback_data": "cat_work"},
+                {"text": "👤 ကိုယ်ရေးကိစ္စ", "callback_data": "cat_personal"}
+            ],
+            [
+                {"text": "📌 အခြားကိစ္စ", "callback_data": "cat_other"},
+                {"text": "🔙 နောက်သို့", "callback_data": "back_main"}
+            ]
+        ]
+    }
+
+
+def create_delete_menu():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "🗑️ အကုန်ဖျက်မယ်", "callback_data": "delete_all"},
+                {"text": "🗑️ ဒီနေ့ဖျက်မယ်", "callback_data": "delete_today"}
+            ],
+            [
+                {"text": "🗑️ အကြွေးဖျက်မယ်", "callback_data": "delete_debts"},
+                {"text": "🗑️ အလုပ်စာရင်း", "callback_data": "delete_work"}
+            ],
+            [
+                {"text": "🗑️ ကိုယ်ရေးစာရင်း", "callback_data": "delete_personal"},
+                {"text": "🗑️ အခြားစာရင်း", "callback_data": "delete_other"}
+            ],
+            [
+                {"text": "🔙 နောက်သို့", "callback_data": "back_main"}
+            ]
+        ]
+    }
+
+
+# ============ Handle Callback (ခလုတ်နှိပ်တဲ့အခါ) ============
+
+def handle_callback(chat_id, data):
+    print(f"Callback received: {data}")
+
+    # ---- မီနူးများ ----
+    if data == "back_main":
+        send_telegram_message(chat_id, "ဆရာ ဘာလုပ်ချင်ပါသလဲ။", create_main_menu())
+
+    elif data == "report_menu":
+        send_telegram_message(chat_id, "ဆရာ ဘယ်စာရင်းကို ကြည့်ချင်ပါသလဲ။", create_report_menu())
+
+    elif data == "money_menu":
+        send_telegram_message(chat_id, "ဆရာ ဘယ်ငွေအမျိုးအစား ထည့်ချင်ပါသလဲ။\nပမာဏကို စာရိုက်ထည့်ပါ။", create_money_menu())
+
+    elif data == "note_menu":
+        send_telegram_message(chat_id, "ဆရာ ဘယ်အမျိုးအစား မှတ်စုထည့်ချင်ပါသလဲ။\nခေါင်းစဉ်ကို စာရိုက်ထည့်ပါ။", create_note_menu())
+
+    elif data == "delete_menu":
+        send_telegram_message(chat_id, "ဆရာ ဘာကိုဖျက်ချင်ပါသလဲ။", create_delete_menu())
+
+    elif data == "schedule_help":
+        send_telegram_message(
+            chat_id,
+            "ဆရာ အစီအစဉ်သတ်မှတ်ဖို့ ဒီပုံစံအတိုင်း ရိုက်ထည့်ပါ -\n\n"
+            "`2026-09-25 09:00 အစည်းအဝေး 2 နာရီအလိုသတိပေးပါ`",
+            create_main_menu()
+        )
+
+    # ---- စာရင်းတောင်းခြင်း ----
+    elif data == "report_daily":
+        reply = database.get_full_daily_report()
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "report_yesterday":
+        reply = database.get_detailed_report(days=1, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+
+    elif data == "report_week":
+        reply = database.get_detailed_report(days=7, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+
+    elif data == "report_month":
+        reply = database.get_detailed_report(days=0, months=1)
+        send_telegram_message(chat_id, reply, create_report_menu())
+
+    elif data == "report_all":
+        reply = database.get_detailed_report(days=99999, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+
+    elif data == "report_debts":
+        reply = database.get_debt_details()
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    # ---- ငွေအမျိုးအစား ----
+    elif data.startswith("type_"):
+        trans_type = data.replace("type_", "")
+        send_telegram_message(
+            chat_id,
+            f"ဆရာ {trans_type} အတွက် ပမာဏနဲ့ အကြောင်းအရာကို ရိုက်ထည့်ပါ။\n\n"
+            f"ဥပမာ - `{trans_type} 5000 ကော်ဖီဆိုင်`",
+            create_money_menu()
+        )
+
+    # ---- မှတ်စုအမျိုးအစား ----
+    elif data.startswith("cat_"):
+        cat = data.replace("cat_", "")
+        cat_names = {"work": "အလုပ်ကိစ္စ", "personal": "ကိုယ်ရေးကိုယ်တာကိစ္စ", "other": "အခြားကိစ္စ"}
+        send_telegram_message(
+            chat_id,
+            f"ဆရာ {cat_names.get(cat, cat)} အတွက် ခေါင်းစဉ်ကို ရိုက်ထည့်ပါ။\n\n"
+            f"ဥပမာ - `{cat_names.get(cat, cat)} Report တင်ရမယ်`",
+            create_note_menu()
+        )
+
+    # ---- ဖျက်ခြင်း ----
+    elif data == "delete_all":
+        reply = database.delete_all_transactions()
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "delete_today":
+        reply = database.delete_today_transactions()
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "delete_debts":
+        reply = database.delete_category_transactions("ချေးငွေ")
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "delete_work":
+        reply = database.delete_category_notes("work")
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "delete_personal":
+        reply = database.delete_category_notes("personal")
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    elif data == "delete_other":
+        reply = database.delete_category_notes("other")
+        send_telegram_message(chat_id, reply, create_main_menu())
+
+    else:
+        send_telegram_message(chat_id, "ဆရာ ကျေးဇူးပြုပြီး ပြန်ရွေးချယ်ပါဆရာ။", create_main_menu())
+
+
+# ============ Process User Request ============
 
 def process_user_request(chat_id, user_text):
     global MY_CHAT_ID
     if MY_CHAT_ID is None:
         MY_CHAT_ID = str(chat_id)
         print(f"Chat ID saved: {MY_CHAT_ID}")
-    
-    # ====== ဆရာရဲ့ Command တွေကို အရင်စစ်မယ် ======
+
     text_lower = user_text.lower()
-    import re
-    
-    # ---- ၁။ အစီအစဉ် (schedules) ----
-    if "အစီအစဉ်" in text_lower or "သတ်မှတ်" in text_lower or "အစည်းအဝေး" in text_lower:
-        # ရက်စွဲ ရှာမယ်
+
+    # ====== ၁။ အစီအစဉ် ======
+    if "အစီအစဉ်" in text_lower or "အစည်းအဝေး" in text_lower:
         date_match = re.search(r'(\d{4}-\d{2}-\d{2})', user_text)
         time_match = re.search(r'(\d{1,2}:\d{2})', user_text)
         reminder_match = re.search(r'(\d+)\s*နာရီ', user_text)
-        
+
         if date_match and time_match:
             date = date_match.group(1)
             time_val = time_match.group(1)
             reminder_hours = int(reminder_match.group(1)) if reminder_match else 2
-            
-            # ခေါင်းစဉ် ရှာမယ်
+
             title = user_text
             title = title.replace(date, "").replace(time_val, "").strip()
             title = title.replace("အစီအစဉ်", "").replace("သတ်မှတ်", "").strip()
             title = title.replace("နာရီအလိုသတိပေးပါ", "").strip()
+            title = re.sub(r'\d+', '', title).strip()
             if not title:
                 title = "အစည်းအဝေး"
-            
-            return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
+
+            reply = database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
         else:
-            return "ဆရာ ရက်စွဲ (2026-09-25) နဲ့ အချိန် (09:00) ကို ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၂။ သုံးငွေ ----
+            send_telegram_message(
+                chat_id,
+                "ဆရာ ရက်စွဲ (2026-09-25) နဲ့ အချိန် (09:00) ကို ထည့်ပေးပါဆရာ။\n\n"
+                "ဥပမာ - `2026-09-25 09:00 အစည်းအဝေး 2 နာရီအလိုသတိပေးပါ`",
+                create_main_menu()
+            )
+            return
+
+    # ====== ၂။ သုံးငွေ ======
     if "သုံးငွေ" in text_lower or "သုံးစွဲ" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -169,10 +300,13 @@ def process_user_request(chat_id, user_text):
             for n in numbers:
                 desc = desc.replace(n, "")
             desc = desc.replace("သုံးငွေ", "").replace("သုံးစွဲ", "").strip()
-            return database.add_transaction("သုံးငွေ", amount, desc)
-        return "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၃။ ယူငွေ ----
+            reply = database.add_transaction("သုံးငွေ", amount, desc)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
+        return
+
+    # ====== ၃။ ယူငွေ ======
     if "ယူငွေ" in text_lower or "ဝင်ငွေ" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -181,10 +315,13 @@ def process_user_request(chat_id, user_text):
             for n in numbers:
                 desc = desc.replace(n, "")
             desc = desc.replace("ယူငွေ", "").replace("ဝင်ငွေ", "").strip()
-            return database.add_transaction("ယူငွေ", amount, desc)
-        return "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၄။ ချေးငွေ ----
+            reply = database.add_transaction("ယူငွေ", amount, desc)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
+        return
+
+    # ====== ၄။ ချေးငွေ ======
     if "ချေးငွေ" in text_lower or "ချေး" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -201,11 +338,15 @@ def process_user_request(chat_id, user_text):
                         break
             desc = desc.replace("ချေးငွေ", "").replace("ချေး", "").strip()
             if person:
-                return database.add_transaction("ချေးငွေ", amount, desc, person)
-            return database.add_transaction("ချေးငွေ", amount, desc)
-        return "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၅။ ပြန်ဆပ် ----
+                reply = database.add_transaction("ချေးငွေ", amount, desc, person)
+            else:
+                reply = database.add_transaction("ချေးငွေ", amount, desc)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
+        return
+
+    # ====== ၅။ ပြန်ဆပ် ======
     if "ပြန်ဆပ်" in text_lower:
         numbers = re.findall(r'\d+', text_lower)
         if numbers:
@@ -221,116 +362,98 @@ def process_user_request(chat_id, user_text):
                         person = part
                         break
             if person:
-                return database.repay_debt(person, amount)
-            desc = desc.replace("ပြန်ဆပ်", "").strip()
-            return database.add_transaction("ပြန်ဆပ်ငွေ", amount, desc)
-        return "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၆။ စာရင်းတောင်းခြင်း ----
+                reply = database.repay_debt(person, amount)
+            else:
+                desc = desc.replace("ပြန်ဆပ်", "").strip()
+                reply = database.add_transaction("ပြန်ဆပ်ငွေ", amount, desc)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။", create_money_menu())
+        return
+
+    # ====== ၆။ စာရင်းတောင်းခြင်း ======
     if text_lower in ["စာရင်း", "နေ့စာရင်း", "ဒီနေ့စာရင်း"]:
-        return database.get_full_daily_report()
-    
+        reply = database.get_full_daily_report()
+        send_telegram_message(chat_id, reply, create_main_menu())
+        return
+
     if text_lower in ["မနေ့ကစာရင်း"]:
-        return database.get_detailed_report(days=1, months=0)
-    
+        reply = database.get_detailed_report(days=1, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+        return
+
     if text_lower in ["ဒီတစ်ပတ်စာရင်း", "တစ်ပတ်စာရင်း"]:
-        return database.get_detailed_report(days=7, months=0)
-    
+        reply = database.get_detailed_report(days=7, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+        return
+
     if text_lower in ["ဒီလစာရင်း", "လစာရင်း"]:
-        return database.get_detailed_report(days=0, months=1)
-    
+        reply = database.get_detailed_report(days=0, months=1)
+        send_telegram_message(chat_id, reply, create_report_menu())
+        return
+
     if text_lower in ["အကုန်စာရင်း", "အကုန်လုံး"]:
-        return database.get_detailed_report(days=9999, months=0)
-    
+        reply = database.get_detailed_report(days=99999, months=0)
+        send_telegram_message(chat_id, reply, create_report_menu())
+        return
+
     if text_lower in ["အကြွေးစာရင်း", "အကြွေး"]:
-        return database.get_debt_details()
-    
+        reply = database.get_debt_details()
+        send_telegram_message(chat_id, reply, create_main_menu())
+        return
+
     if text_lower in ["အလုပ်စာရင်း", "အလုပ်"]:
-        return database.get_category_report("work")
-    
+        reply = database.get_category_report("work")
+        send_telegram_message(chat_id, reply, create_main_menu())
+        return
+
     if text_lower in ["ကိုယ်ရေးစာရင်း", "ကိုယ်ရေး"]:
-        return database.get_category_report("personal")
-    
+        reply = database.get_category_report("personal")
+        send_telegram_message(chat_id, reply, create_main_menu())
+        return
+
     if text_lower in ["အခြားစာရင်း", "အခြား"]:
-        return database.get_category_report("other")
-    
-    # ---- ၇။ မှတ်စုထည့်ခြင်း ----
-    if "အလုပ်" in text_lower and "စာရင်း" not in text_lower:
+        reply = database.get_category_report("other")
+        send_telegram_message(chat_id, reply, create_main_menu())
+        return
+
+    # ====== ၇။ မှတ်စုထည့်ခြင်း ======
+    if "အလုပ်" in text_lower:
         title = user_text.replace("အလုပ်", "").strip()
         if title:
-            return database.add_note("work", title)
-        return "ဆရာ အလုပ်ကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။"
-    
-    if "ကိုယ်ရေး" in text_lower and "စာရင်း" not in text_lower:
+            reply = database.add_note("work", title)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ အလုပ်ကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။", create_note_menu())
+        return
+
+    if "ကိုယ်ရေး" in text_lower:
         title = user_text.replace("ကိုယ်ရေး", "").strip()
         if title:
-            return database.add_note("personal", title)
-        return "ဆရာ ကိုယ်ရေးကိုယ်တာကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။"
-    
-    if "အခြား" in text_lower and "စာရင်း" not in text_lower:
+            reply = database.add_note("personal", title)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ ကိုယ်ရေးကိုယ်တာကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။", create_note_menu())
+        return
+
+    if "အခြား" in text_lower:
         title = user_text.replace("အခြား", "").strip()
         if title:
-            return database.add_note("other", title)
-        return "ဆရာ အခြားကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။"
-    
-    # ---- ၈။ Gemini ကိုခေါ်မယ် ----
-    result = process_with_gemini(user_text)
-    
-    if not result:
-        return "ဆရာရဲ့ စာကို အကျွန်နားမလည်လို့ပါဆရာ။ ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပေးပါဆရာ။"
-    
-    action_type = result.get("type", "chat")
-    
-    if action_type == "transaction":
-        trans_type = result.get("transaction_type", "")
-        amount = result.get("amount", 0)
-        description = result.get("description", "")
-        person = result.get("person", "")
-        if amount <= 0:
-            return "ဆရာ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-        return database.add_transaction(trans_type, amount, description, person)
-    
-    elif action_type == "note":
-        category = result.get("category", "other")
-        title = result.get("title", "")
-        description = result.get("description", "")
-        if not title:
-            return "ဆရာ ခေါင်းစဉ်ကို ထည့်ပေးပါဆရာ။"
-        return database.add_note(category, title, description)
-    
-    elif action_type == "repay":
-        person = result.get("person", "")
-        amount = result.get("amount", 0)
-        if not person or amount <= 0:
-            return "ဆရာ လူအမည်နဲ့ ငွေပမာဏကို ထည့်ပေးပါဆရာ။"
-        return database.repay_debt(person, amount)
-    
-    elif action_type == "report":
-        report_type = result.get("report_type", "daily")
-        if report_type == "debts":
-            return database.get_debt_details()
-        elif report_type == "yesterday":
-            return database.get_detailed_report(days=1, months=0)
-        elif report_type == "week":
-            return database.get_detailed_report(days=7, months=0)
-        elif report_type == "month":
-            return database.get_detailed_report(days=0, months=1)
-        elif report_type == "all":
-            return database.get_detailed_report(days=9999, months=0)
-        else:
-            return database.get_full_daily_report()
-    
-    elif action_type == "schedule":
-        title = result.get("title", "အစည်းအဝေး")
-        date = result.get("date", "")
-        time_val = result.get("time", "")
-        reminder_hours = result.get("reminder_hours", 2)
-        if not date or not time_val:
-            return "ဆရာ ရက်စွဲနဲ့ အချိန်ကို ထည့်ပေးပါဆရာ။"
-        return database.add_schedule_with_reminder(date, time_val, title, "", reminder_hours)
-    
-    else:
-        return result.get("message", "ဆရာ ကျေးဇူးပြုပြီး ပြန်ရှင်းပြပေးပါဆရာ။")
+            reply = database.add_note("other", title)
+            send_telegram_message(chat_id, reply, create_main_menu())
+            return
+        send_telegram_message(chat_id, "ဆရာ အခြားကိစ္စအကြောင်း ထည့်ပေးပါဆရာ။", create_note_menu())
+        return
+
+    # ====== ၈။ နားမလည်ရင် မီနူးပြမယ် ======
+    send_telegram_message(
+        chat_id,
+        "ဆရာ ဘာလုပ်ချင်ပါသလဲ။ အောက်က ခလုတ်တွေကို နှိပ်ကြည့်ပါ။",
+        create_main_menu()
+    )
+
+
+# ============ Reminder Checker ============
 
 def check_and_send_reminders():
     global MY_CHAT_ID
@@ -345,16 +468,19 @@ def check_and_send_reminders():
     except Exception as e:
         print(f"Reminder check error: {e}")
 
+
+# ============ Polling Mode ============
+
 def run_bot_polling():
     offset = 0
     print("Bot Polling Thread Started!")
-    database.init_db()  # ← ဒီစာသား ပါရမယ်
-    
+    database.init_db()
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(check_and_send_reminders, 'interval', minutes=1)
     scheduler.start()
     print("Scheduler started!")
-    
+
     while True:
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=15"
@@ -364,21 +490,31 @@ def run_bot_polling():
                 if result.get("ok"):
                     for update in result.get("result", []):
                         offset = update["update_id"] + 1
+
+                        # Callback Query ကိုစစ်ဆေးမယ်
+                        if "callback_query" in update:
+                            callback = update["callback_query"]
+                            chat_id = callback["message"]["chat"]["id"]
+                            data = callback["data"]
+                            callback_id = callback["id"]
+                            handle_callback(chat_id, data)
+                            answer_callback(callback_id)
+                            continue
+
                         if "message" in update and "text" in update["message"]:
                             chat_id = update["message"]["chat"]["id"]
                             user_text = update["message"]["text"]
                             print(f"Received: {user_text}")
-                            reply = process_user_request(chat_id, user_text)
-                            print(f"Reply: {reply[:100]}...")
-                            send_telegram_message(chat_id, reply)
+                            process_user_request(chat_id, user_text)
         except Exception as e:
             print(f"Polling loop error: {e}")
         time.sleep(1)
+
 
 if __name__ == '__main__':
     bot_thread = threading.Thread(target=run_bot_polling)
     bot_thread.daemon = True
     bot_thread.start()
-    
+
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
