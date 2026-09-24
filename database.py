@@ -1,444 +1,462 @@
-import sqlite3
-import datetime
 import os
-import json
+import datetime
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+# Database URL
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///finance.db')
+
+# Render PostgreSQL URL ကို ပြင်ခြင်း
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(DATABASE_URL, echo=False)
+Base = declarative_base()
+SessionLocal = sessionmaker(bind=engine)
+
+# ============ Models ============
+
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    id = Column(Integer, primary_key=True)
+    date = Column(String(20))
+    time = Column(String(20))
+    type = Column(String(50))
+    amount = Column(Float)
+    description = Column(Text)
+    person = Column(String(255))
+    category = Column(String(50))
+    status = Column(String(20), default='active')
+    created_at = Column(DateTime, default=datetime.datetime.now)
+
+class Note(Base):
+    __tablename__ = 'notes'
+    id = Column(Integer, primary_key=True)
+    date = Column(String(20))
+    time = Column(String(20))
+    category = Column(String(50))
+    title = Column(String(255))
+    description = Column(Text)
+    status = Column(String(20), default='active')
+    created_at = Column(DateTime, default=datetime.datetime.now)
+
+class Schedule(Base):
+    __tablename__ = 'schedules'
+    id = Column(Integer, primary_key=True)
+    date = Column(String(20))
+    time = Column(String(20))
+    title = Column(String(255))
+    description = Column(Text)
+    reminder_hours = Column(Integer, default=2)
+    created_at = Column(DateTime, default=datetime.datetime.now)
+
+class Reminder(Base):
+    __tablename__ = 'reminders'
+    id = Column(Integer, primary_key=True)
+    schedule_id = Column(Integer)
+    reminder_time = Column(String(20))
+    message = Column(Text)
+    is_sent = Column(Integer, default=0)
+
+# ============ Functions ============
 
 def init_db():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        type TEXT,
-        amount REAL,
-        description TEXT,
-        person TEXT,
-        category TEXT,
-        status TEXT DEFAULT 'active',
-        created_at TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS notes (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        category TEXT,
-        title TEXT,
-        description TEXT,
-        status TEXT DEFAULT 'active',
-        created_at TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS schedules (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT,
-        time TEXT,
-        title TEXT,
-        description TEXT,
-        reminder_hours INTEGER DEFAULT 2,
-        created_at TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS reminders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        schedule_id INTEGER,
-        reminder_time TEXT,
-        message TEXT,
-        is_sent INTEGER DEFAULT 0
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS backup_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        backup_date TEXT,
-        backup_time TEXT,
-        record_count INTEGER,
-        status TEXT
-    )''')
-    
-    conn.commit()
-    conn.close()
-    backup_database()
-
-def backup_database():
-    try:
-        if not os.path.exists('backups'):
-            os.makedirs('backups')
-        now = datetime.datetime.now()
-        backup_name = f"backups/finance_backup_{now.strftime('%Y-%m-%d')}.db"
-        import shutil
-        if os.path.exists('finance.db'):
-            shutil.copy2('finance.db', backup_name)
-            print(f"✅ Backup saved: {backup_name}")
-    except Exception as e:
-        print(f"❌ Backup error: {e}")
+    Base.metadata.create_all(engine)
+    print("✅ Database initialized!")
 
 def format_response(message):
     return f"{message}"
 
 def add_transaction(transaction_type, amount, description="", person="", category=""):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    now = datetime.datetime.now()
-    date = now.strftime("%Y-%m-%d")
-    time = now.strftime("%H:%M:%S")
-    created_at = now.strftime("%Y-%m-%d %H:%M:%S")
-    
-    c.execute("""INSERT INTO transactions 
-                 (date, time, type, amount, description, person, category, created_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-              (date, time, transaction_type, amount, description, person, category, created_at))
-    conn.commit()
-    conn.close()
-    return format_response(f"✅ ဆရာရဲ့ {transaction_type} {amount} ကျပ်ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        now = datetime.datetime.now()
+        trans = Transaction(
+            date=now.strftime("%Y-%m-%d"),
+            time=now.strftime("%H:%M:%S"),
+            type=transaction_type,
+            amount=amount,
+            description=description,
+            person=person,
+            category=category
+        )
+        session.add(trans)
+        session.commit()
+        return format_response(f"✅ ဆရာရဲ့ {transaction_type} {amount} ကျပ်ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
 
 def add_note(category, title, description=""):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    now = datetime.datetime.now()
-    date = now.strftime("%Y-%m-%d")
-    time = now.strftime("%H:%M:%S")
-    created_at = now.strftime("%Y-%m-%d %H:%M:%S")
-    
-    c.execute("""INSERT INTO notes 
-                 (date, time, category, title, description, created_at) 
-                 VALUES (?, ?, ?, ?, ?, ?)""",
-              (date, time, category, title, description, created_at))
-    conn.commit()
-    conn.close()
-    
-    category_names = {
-        'work': 'အလုပ်ကိစ္စ',
-        'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ',
-        'other': 'အခြားကိစ္စ'
-    }
-    cat_name = category_names.get(category, category)
-    return format_response(f"✅ ဆရာရဲ့ {cat_name} '{title}' ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        now = datetime.datetime.now()
+        note = Note(
+            date=now.strftime("%Y-%m-%d"),
+            time=now.strftime("%H:%M:%S"),
+            category=category,
+            title=title,
+            description=description
+        )
+        session.add(note)
+        session.commit()
+        
+        category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
+        cat_name = category_names.get(category, category)
+        return format_response(f"✅ ဆရာရဲ့ {cat_name} '{title}' ကို အကျွန်မှတ်ထားလိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
 
 def add_schedule_with_reminder(date, time, title, description="", reminder_hours=2):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute("INSERT INTO schedules (date, time, title, description, reminder_hours, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-              (date, time, title, description, reminder_hours, now))
-    schedule_id = c.lastrowid
-    
-    from datetime import datetime, timedelta
-    event_datetime = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
-    reminder_datetime = event_datetime - timedelta(hours=reminder_hours)
-    reminder_time = reminder_datetime.strftime("%Y-%m-%d %H:%M")
-    
-    c.execute("INSERT INTO reminders (schedule_id, reminder_time, message) VALUES (?, ?, ?)",
-              (schedule_id, reminder_time, f"⏰ သတိပေးချက်: {title} ကို {date} {time} တွင် ကျင်းပမည်"))
-    conn.commit()
-    conn.close()
-    return format_response(f"✅ ဆရာရဲ့ အစီအစဉ် '{title}' ကို {date} {time} တွင် အကျွန်မှတ်သားပြီး အချိန်မှန်သတိပေးပါမည်ဆရာ။")
+    session = SessionLocal()
+    try:
+        schedule = Schedule(
+            date=date,
+            time=time,
+            title=title,
+            description=description,
+            reminder_hours=reminder_hours
+        )
+        session.add(schedule)
+        session.commit()
+        
+        from datetime import datetime, timedelta
+        event_datetime = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+        reminder_datetime = event_datetime - timedelta(hours=reminder_hours)
+        
+        reminder = Reminder(
+            schedule_id=schedule.id,
+            reminder_time=reminder_datetime.strftime("%Y-%m-%d %H:%M"),
+            message=f"⏰ သတိပေးချက်: {title} ကို {date} {time} တွင် ကျင်းပမည်"
+        )
+        session.add(reminder)
+        session.commit()
+        
+        return format_response(f"✅ ဆရာရဲ့ အစီအစဉ် '{title}' ကို {date} {time} တွင် အကျွန်မှတ်သားပြီး အချိန်မှန်သတိပေးပါမည်ဆရာ။")
+    finally:
+        session.close()
 
 def get_due_reminders():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    c.execute("SELECT id, message FROM reminders WHERE reminder_time <= ? AND is_sent = 0", (now,))
-    reminders = c.fetchall()
-    conn.close()
-    return reminders
+    session = SessionLocal()
+    try:
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        reminders = session.query(Reminder).filter(
+            Reminder.reminder_time <= now,
+            Reminder.is_sent == 0
+        ).all()
+        return [(r.id, r.message) for r in reminders]
+    finally:
+        session.close()
 
 def mark_reminder_sent(reminder_id):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    c.execute("UPDATE reminders SET is_sent = 1 WHERE id = ?", (reminder_id,))
-    conn.commit()
-    conn.close()
+    session = SessionLocal()
+    try:
+        reminder = session.query(Reminder).filter(Reminder.id == reminder_id).first()
+        if reminder:
+            reminder.is_sent = 1
+            session.commit()
+    finally:
+        session.close()
 
-# ============================================================
-# ဒီနေ့ အပြည့်အစုံ အစီရင်ခံစာ (အစီအစဉ်ပါ ထည့်ပြီး)
-# ============================================================
 def get_full_daily_report():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    
-    # ငွေစာရင်း
-    c.execute("""SELECT type, SUM(amount) FROM transactions WHERE date = ? AND status = 'active' GROUP BY type""", (today,))
-    summary = c.fetchall()
-    
-    c.execute("""SELECT date, time, type, amount, description, person, category FROM transactions WHERE date = ? AND status = 'active' ORDER BY time DESC""", (today,))
-    transactions = c.fetchall()
-    
-    # မှတ်စု
-    c.execute("""SELECT category, title, description, time FROM notes WHERE date = ? AND status = 'active' ORDER BY time DESC""", (today,))
-    notes = c.fetchall()
-    
-    # ✅ အစီအစဉ် (ဒီအပိုင်းကို အသစ်ထည့်ထားပါတယ်)
-    c.execute("""SELECT time, title, description FROM schedules WHERE date = ? ORDER BY time ASC""", (today,))
-    schedules = c.fetchall()
-    
-    conn.close()
-    
-    report = f"📊 **{today} နေ့စဉ် အပြည့်အစုံ အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now}\n\n"
-    
-    # ====== ငွေစာရင်း ======
-    report += "💰 **ငွေစာရင်း**\n"
-    total_in = 0
-    total_out = 0
-    summary_dict = {}
-    for s in summary:
-        summary_dict[s[0]] = s[1]
-        if s[0] in ["ယူငွေ", "ပြန်ဆပ်ငွေ"]:
-            total_in += s[1]
-        else:
-            total_out += s[1]
-    
-    type_order = ["ယူငွေ", "သုံးငွေ", "ချေးငွေ", "ပြန်ဆပ်ငွေ"]
-    for t in type_order:
-        if t in summary_dict:
-            report += f"  {t}: {summary_dict[t]} ကျပ်\n"
-    report += f"\n  📈 ဝင်ငွေ: {total_in} ကျပ်\n  📉 ထွက်ငွေ: {total_out} ကျပ်\n  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
-    
-    if transactions:
-        report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
+    session = SessionLocal()
+    try:
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        
+        transactions = session.query(Transaction).filter(
+            Transaction.date == today,
+            Transaction.status == 'active'
+        ).order_by(Transaction.time.desc()).all()
+        
+        notes = session.query(Note).filter(
+            Note.date == today,
+            Note.status == 'active'
+        ).order_by(Note.time.desc()).all()
+        
+        schedules = session.query(Schedule).filter(
+            Schedule.date == today
+        ).order_by(Schedule.time.asc()).all()
+        
+        summary = {}
         for t in transactions:
-            date, time_val, trans_type, amount, desc, person, category = t
-            report += f"  • {time_val} - {trans_type} {amount} ကျပ်"
-            if desc:
-                report += f" ({desc})"
-            if person:
-                report += f" - {person}"
-            report += "\n"
-    else:
-        report += "  ဒီနေ့ငွေစာရင်းမရှိပါ။\n"
-    
-    # ====== အစီအစဉ် (အသစ်) ======
-    if schedules:
-        report += "\n📅 **ဒီနေ့ အစီအစဉ်များ**\n"
-        for time_val, title, description in schedules:
-            report += f"  ⏰ {time_val} - {title}\n"
-            if description:
-                report += f"     📝 {description}\n"
-    else:
-        report += "\n📅 ဒီနေ့အတွက် သတ်မှတ်ထားတဲ့ အစီအစဉ်မရှိပါ။\n"
-    
-    # ====== မှတ်စု ======
-    if notes:
-        report += "\n📝 **မှတ်စုများ**\n"
-        category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
-        for category, title, description, time_val in notes:
-            cat_name = category_names.get(category, category)
-            report += f"\n  {cat_name}\n  ⏰ {time_val}\n  📌 {title}\n"
-            if description:
-                report += f"  📝 {description}\n"
-    else:
-        report += "\n📝 ဒီနေ့မှတ်စုမရှိပါ။\n"
-    
-    return format_response(report)
+            if t.type not in summary:
+                summary[t.type] = 0
+            summary[t.type] += t.amount
+        
+        report = f"📊 **{today} နေ့စဉ် အပြည့်အစုံ အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now}\n\n"
+        
+        report += "💰 **ငွေစာရင်း**\n"
+        total_in = 0
+        total_out = 0
+        for t in ["ယူငွေ", "သုံးငွေ", "ချေးငွေ", "ပြန်ဆပ်ငွေ"]:
+            if t in summary:
+                report += f"  {t}: {summary[t]} ကျပ်\n"
+                if t in ["ယူငွေ", "ပြန်ဆပ်ငွေ"]:
+                    total_in += summary[t]
+                else:
+                    total_out += summary[t]
+        
+        report += f"\n  📈 ဝင်ငွေ: {total_in} ကျပ်\n  📉 ထွက်ငွေ: {total_out} ကျပ်\n  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
+        
+        if transactions:
+            report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
+            for t in transactions:
+                report += f"  • {t.time} - {t.type} {t.amount} ကျပ်"
+                if t.description:
+                    report += f" ({t.description})"
+                if t.person:
+                    report += f" - {t.person}"
+                report += "\n"
+        else:
+            report += "  ဒီနေ့ငွေစာရင်းမရှိပါ။\n"
+        
+        if schedules:
+            report += "\n📅 **ဒီနေ့ အစီအစဉ်များ**\n"
+            for s in schedules:
+                report += f"  ⏰ {s.time} - {s.title}\n"
+                if s.description:
+                    report += f"     📝 {s.description}\n"
+        else:
+            report += "\n📅 ဒီနေ့အတွက် သတ်မှတ်ထားတဲ့ အစီအစဉ်မရှိပါ။\n"
+        
+        if notes:
+            report += "\n📝 **မှတ်စုများ**\n"
+            category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
+            for n in notes:
+                cat_name = category_names.get(n.category, n.category)
+                report += f"\n  {cat_name}\n  ⏰ {n.time}\n  📌 {n.title}\n"
+                if n.description:
+                    report += f"  📝 {n.description}\n"
+        else:
+            report += "\n📝 ဒီနေ့မှတ်စုမရှိပါ။\n"
+        
+        return format_response(report)
+    finally:
+        session.close()
 
-# ============================================================
-# အချိန်ကာလအလိုက် အသေးစိတ်စာရင်း (အစီအစဉ်ပါ ထည့်ပြီး)
-# ============================================================
 def get_detailed_report(days=0, months=0):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    from datetime import datetime, timedelta
-    now = datetime.now()
-    today = now.date()
-    
-    if months > 0:
-        start_date = today - timedelta(days=30*months)
-        start_str = start_date.strftime("%Y-%m-%d")
-        title = f"လွန်ခဲ့တဲ့ {months} လ"
-    elif days > 0:
-        start_date = today - timedelta(days=days)
-        start_str = start_date.strftime("%Y-%m-%d")
-        title = f"လွန်ခဲ့တဲ့ {days} ရက်"
-    else:
-        start_str = today.strftime("%Y-%m-%d")
-        title = "ဒီနေ့"
-    
-    # ငွေစာရင်း
-    c.execute("""SELECT date, time, type, amount, description, person, category FROM transactions WHERE date >= ? AND status = 'active' ORDER BY date DESC, time DESC""", (start_str,))
-    transactions = c.fetchall()
-    
-    c.execute("""SELECT type, SUM(amount) FROM transactions WHERE date >= ? AND status = 'active' GROUP BY type""", (start_str,))
-    summary = c.fetchall()
-    
-    # မှတ်စု
-    c.execute("""SELECT date, time, category, title, description FROM notes WHERE date >= ? AND status = 'active' ORDER BY date DESC, time DESC""", (start_str,))
-    notes = c.fetchall()
-    
-    # ✅ အစီအစဉ် (ဒီအပိုင်းကို အသစ်ထည့်ထားပါတယ်)
-    c.execute("""SELECT date, time, title, description FROM schedules WHERE date >= ? ORDER BY date ASC, time ASC""", (start_str,))
-    schedules = c.fetchall()
-    
-    conn.close()
-    
-    report = f"📊 **{title} အသေးစိတ် အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now.strftime('%Y-%m-%d %H:%M')}\n\n"
-    
-    # ====== ငွေစာရင်းအကျဉ်းချုပ် ======
-    report += "💰 **ငွေစာရင်း အကျဉ်းချုပ်**\n"
-    total_in = 0
-    total_out = 0
-    summary_dict = {}
-    for s in summary:
-        summary_dict[s[0]] = s[1]
-        if s[0] in ["ယူငွေ", "ပြန်ဆပ်ငွေ"]:
-            total_in += s[1]
+    session = SessionLocal()
+    try:
+        from datetime import datetime, timedelta
+        now = datetime.datetime.now()
+        today = now.date()
+        
+        if months > 0:
+            start_date = today - timedelta(days=30*months)
+            start_str = start_date.strftime("%Y-%m-%d")
+            title = f"လွန်ခဲ့တဲ့ {months} လ"
+        elif days > 0:
+            start_date = today - timedelta(days=days)
+            start_str = start_date.strftime("%Y-%m-%d")
+            title = f"လွန်ခဲ့တဲ့ {days} ရက်"
         else:
-            total_out += s[1]
-    
-    type_order = ["ယူငွေ", "သုံးငွေ", "ချေးငွေ", "ပြန်ဆပ်ငွေ"]
-    for t in type_order:
-        if t in summary_dict:
-            report += f"  {t}: {summary_dict[t]} ကျပ်\n"
-    report += f"\n  📈 ဝင်ငွေ: {total_in} ကျပ်\n  📉 ထွက်ငွေ: {total_out} ကျပ်\n  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
-    
-    # ====== ငွေစာရင်းအသေးစိတ် ======
-    if transactions:
-        report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
+            start_str = today.strftime("%Y-%m-%d")
+            title = "ဒီနေ့"
+        
+        transactions = session.query(Transaction).filter(
+            Transaction.date >= start_str,
+            Transaction.status == 'active'
+        ).order_by(Transaction.date.desc(), Transaction.time.desc()).all()
+        
+        notes = session.query(Note).filter(
+            Note.date >= start_str,
+            Note.status == 'active'
+        ).order_by(Note.date.desc(), Note.time.desc()).all()
+        
+        schedules = session.query(Schedule).filter(
+            Schedule.date >= start_str
+        ).order_by(Schedule.date.asc(), Schedule.time.asc()).all()
+        
+        summary = {}
         for t in transactions:
-            date, time_val, trans_type, amount, desc, person, category = t
-            report += f"\n  📅 {date} ({time_val})\n  📌 {trans_type} {amount} ကျပ်"
-            if desc:
-                report += f"\n  📝 {desc}"
-            if person:
-                report += f"\n  👤 {person}"
-            report += "\n"
-    else:
-        report += "  ငွေစာရင်းမရှိပါ။\n"
-    
-    # ====== အစီအစဉ်များ (အသစ်) ======
-    if schedules:
-        report += "\n📅 **အစီအစဉ်များ**\n"
-        for date, time_val, title, description in schedules:
-            report += f"\n  📅 {date} ({time_val})\n  📌 {title}\n"
-            if description:
-                report += f"  📝 {description}\n"
-    
-    # ====== မှတ်စုများ ======
-    if notes:
-        report += "\n📝 **မှတ်စုများ**\n"
-        category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
-        for date, time_val, category, title, description in notes:
-            cat_name = category_names.get(category, category)
-            report += f"\n  {cat_name}\n  📅 {date} ({time_val})\n  📌 {title}\n"
-            if description:
-                report += f"  📝 {description}\n"
-    
-    return format_response(report)
+            if t.type not in summary:
+                summary[t.type] = 0
+            summary[t.type] += t.amount
+        
+        report = f"📊 **{title} အသေးစိတ် အစီရင်ခံစာ**\n📅 စာရင်းကောက်ချိန်: {now.strftime('%Y-%m-%d %H:%M')}\n\n"
+        
+        report += "💰 **ငွေစာရင်း အကျဉ်းချုပ်**\n"
+        total_in = 0
+        total_out = 0
+        for t in ["ယူငွေ", "သုံးငွေ", "ချေးငွေ", "ပြန်ဆပ်ငွေ"]:
+            if t in summary:
+                report += f"  {t}: {summary[t]} ကျပ်\n"
+                if t in ["ယူငွေ", "ပြန်ဆပ်ငွေ"]:
+                    total_in += summary[t]
+                else:
+                    total_out += summary[t]
+        
+        report += f"\n  📈 ဝင်ငွေ: {total_in} ကျပ်\n  📉 ထွက်ငွေ: {total_out} ကျပ်\n  💰 လက်ကျန်: {total_in - total_out} ကျပ်\n\n"
+        
+        if transactions:
+            report += "📋 **ငွေစာရင်းအသေးစိတ်**\n"
+            for t in transactions:
+                report += f"\n  📅 {t.date} ({t.time})\n  📌 {t.type} {t.amount} ကျပ်"
+                if t.description:
+                    report += f"\n  📝 {t.description}"
+                if t.person:
+                    report += f"\n  👤 {t.person}"
+                report += "\n"
+        else:
+            report += "  ငွေစာရင်းမရှိပါ။\n"
+        
+        if schedules:
+            report += "\n📅 **အစီအစဉ်များ**\n"
+            for s in schedules:
+                report += f"\n  📅 {s.date} ({s.time})\n  📌 {s.title}\n"
+                if s.description:
+                    report += f"  📝 {s.description}\n"
+        
+        if notes:
+            report += "\n📝 **မှတ်စုများ**\n"
+            category_names = {'work': '💼 အလုပ်ကိစ္စ', 'personal': '👤 ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': '📌 အခြားကိစ္စ'}
+            for n in notes:
+                cat_name = category_names.get(n.category, n.category)
+                report += f"\n  {cat_name}\n  📅 {n.date} ({n.time})\n  📌 {n.title}\n"
+                if n.description:
+                    report += f"  📝 {n.description}\n"
+        
+        return format_response(report)
+    finally:
+        session.close()
 
 def get_category_report(category):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
-    cat_name = category_names.get(category, category)
-    
-    c.execute("""SELECT date, time, title, description FROM notes WHERE category = ? AND status = 'active' ORDER BY date DESC, time DESC""", (category,))
-    notes = c.fetchall()
-    conn.close()
-    
-    if not notes:
-        return format_response(f"📋 {cat_name} စာရင်းမရှိပါဆရာ။")
-    
-    report = f"📋 **{cat_name} စာရင်း**\n\n"
-    for date, time_val, title, description in notes:
-        report += f"📅 {date} ({time_val})\n📌 {title}\n"
-        if description:
-            report += f"📝 {description}\n"
-        report += "\n"
-    return format_response(report)
+    session = SessionLocal()
+    try:
+        category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
+        cat_name = category_names.get(category, category)
+        
+        notes = session.query(Note).filter(
+            Note.category == category,
+            Note.status == 'active'
+        ).order_by(Note.date.desc(), Note.time.desc()).all()
+        
+        if not notes:
+            return format_response(f"📋 {cat_name} စာရင်းမရှိပါဆရာ။")
+        
+        report = f"📋 **{cat_name} စာရင်း**\n\n"
+        for n in notes:
+            report += f"📅 {n.date} ({n.time})\n📌 {n.title}\n"
+            if n.description:
+                report += f"📝 {n.description}\n"
+            report += "\n"
+        return format_response(report)
+    finally:
+        session.close()
 
 def get_debt_details():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    c.execute("""SELECT person, SUM(amount), COUNT(*) FROM transactions WHERE type = 'ချေးငွေ' AND status = 'active' GROUP BY person""")
-    debts = c.fetchall()
-    c.execute("""SELECT person, SUM(amount), COUNT(*) FROM transactions WHERE type = 'ပြန်ဆပ်ငွေ' AND status = 'active' GROUP BY person""")
-    repayments = c.fetchall()
-    conn.close()
-    
-    if not debts:
-        return format_response("📋 အကြွေးမရှိပါဆရာ။")
-    
-    report = "📋 **အကြွေး အသေးစိတ်စာရင်း**\n\n"
-    repay_dict = {}
-    for person, amount, count in repayments:
-        repay_dict[person] = {"amount": amount, "count": count}
-    
-    for person, total_debt, count in debts:
-        repaid = repay_dict.get(person, {"amount": 0, "count": 0})
-        remaining = total_debt - repaid["amount"]
-        report += f"👤 **{person}**\n   ချေးငွေ: {total_debt} ကျပ် ({count} ကြိမ်)\n"
-        if repaid["amount"] > 0:
-            report += f"   ပြန်ဆပ်: {repaid['amount']} ကျပ် ({repaid['count']} ကြိမ်)\n"
-        report += f"   ကျန်အကြွေး: {remaining} ကျပ်\n\n"
-    return format_response(report)
+    session = SessionLocal()
+    try:
+        debts = session.query(Transaction).filter(
+            Transaction.type == 'ချေးငွေ',
+            Transaction.status == 'active'
+        ).all()
+        
+        repayments = session.query(Transaction).filter(
+            Transaction.type == 'ပြန်ဆပ်ငွေ',
+            Transaction.status == 'active'
+        ).all()
+        
+        if not debts:
+            return format_response("📋 အကြွေးမရှိပါဆရာ။")
+        
+        debt_dict = {}
+        for d in debts:
+            if d.person:
+                if d.person not in debt_dict:
+                    debt_dict[d.person] = {"debt": 0, "repaid": 0, "count": 0}
+                debt_dict[d.person]["debt"] += d.amount
+                debt_dict[d.person]["count"] += 1
+        
+        for r in repayments:
+            if r.person and r.person in debt_dict:
+                debt_dict[r.person]["repaid"] += r.amount
+        
+        report = "📋 **အကြွေး အသေးစိတ်စာရင်း**\n\n"
+        for person, data in debt_dict.items():
+            remaining = data["debt"] - data["repaid"]
+            report += f"👤 **{person}**\n"
+            report += f"   ချေးငွေ: {data['debt']} ကျပ် ({data['count']} ကြိမ်)\n"
+            if data["repaid"] > 0:
+                report += f"   ပြန်ဆပ်: {data['repaid']} ကျပ်\n"
+            report += f"   ကျန်အကြွေး: {remaining} ကျပ်\n\n"
+        
+        return format_response(report)
+    finally:
+        session.close()
 
 def get_debt_for_person(person):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    c.execute("""SELECT SUM(amount) FROM transactions WHERE type = 'ချေးငွေ' AND person = ? AND status = 'active'""", (person,))
-    result = c.fetchone()[0]
-    conn.close()
-    return result if result else 0
+    session = SessionLocal()
+    try:
+        debts = session.query(Transaction).filter(
+            Transaction.type == 'ချေးငွေ',
+            Transaction.person == person,
+            Transaction.status == 'active'
+        ).all()
+        
+        total = sum(d.amount for d in debts)
+        return total if total else 0
+    finally:
+        session.close()
 
 def repay_debt(person, amount):
-    current_debt = get_debt_for_person(person)
-    if current_debt == 0:
-        return format_response(f"⚠️ {person} ဆီက အကြွေးမရှိပါဆရာ။")
-    if amount > current_debt:
-        return format_response(f"⚠️ {person} ဆီက အကြွေးက {current_debt} ကျပ်ပဲရှိပါတယ်ဆရာ။ {amount} ကျပ်ထပ်မဆပ်နိုင်ပါ။")
-    
-    add_transaction("ပြန်ဆပ်ငွေ", amount, f"{person} ကို ပြန်ဆပ်", person)
-    remaining = current_debt - amount
-    if remaining == 0:
-        return format_response(f"✅ {person} ဆီက အကြွေး အကုန်ပြန်ဆပ်ပြီးပါပြီဆရာ။")
-    else:
-        return format_response(f"✅ {person} ဆီက အကြွေး {amount} ကျပ် ပြန်ဆပ်ပြီးပါပြီဆရာ။ ကျန်အကြွေး: {remaining} ကျပ်")
-
-# ============ ဖျက်ခြင်း Function များ ============
+    session = SessionLocal()
+    try:
+        current_debt = get_debt_for_person(person)
+        if current_debt == 0:
+            return format_response(f"⚠️ {person} ဆီက အကြွေးမရှိပါဆရာ။")
+        if amount > current_debt:
+            return format_response(f"⚠️ {person} ဆီက အကြွေးက {current_debt} ကျပ်ပဲရှိပါတယ်ဆရာ။ {amount} ကျပ်ထပ်မဆပ်နိုင်ပါ။")
+        
+        add_transaction("ပြန်ဆပ်ငွေ", amount, f"{person} ကို ပြန်ဆပ်", person)
+        remaining = current_debt - amount
+        
+        if remaining == 0:
+            return format_response(f"✅ {person} ဆီက အကြွေး အကုန်ပြန်ဆပ်ပြီးပါပြီဆရာ။")
+        else:
+            return format_response(f"✅ {person} ဆီက အကြွေး {amount} ကျပ် ပြန်ဆပ်ပြီးပါပြီဆရာ။ ကျန်အကြွေး: {remaining} ကျပ်")
+    finally:
+        session.close()
 
 def delete_all_transactions():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM transactions")
-    c.execute("DELETE FROM notes")
-    c.execute("DELETE FROM schedules")
-    c.execute("DELETE FROM reminders")
-    conn.commit()
-    conn.close()
-    backup_database()
-    return format_response("✅ ဆရာရဲ့ စာရင်းအကုန်ကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        session.query(Transaction).delete()
+        session.query(Note).delete()
+        session.query(Schedule).delete()
+        session.query(Reminder).delete()
+        session.commit()
+        return format_response("✅ ဆရာရဲ့ စာရင်းအကုန်ကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
 
 def delete_today_transactions():
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    c.execute("DELETE FROM transactions WHERE date = ?", (today,))
-    c.execute("DELETE FROM notes WHERE date = ?", (today,))
-    conn.commit()
-    conn.close()
-    backup_database()
-    return format_response(f"✅ ဆရာရဲ့ {today} စာရင်းကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        session.query(Transaction).filter(Transaction.date == today).delete()
+        session.query(Note).filter(Note.date == today).delete()
+        session.commit()
+        return format_response(f"✅ ဆရာရဲ့ {today} စာရင်းကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
 
 def delete_category_transactions(category_type):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    c.execute("DELETE FROM transactions WHERE type = ?", (category_type,))
-    deleted = c.rowcount
-    conn.commit()
-    conn.close()
-    backup_database()
-    return format_response(f"✅ ဆရာရဲ့ {category_type} စာရင်း {deleted} ခုကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        count = session.query(Transaction).filter(Transaction.type == category_type).delete()
+        session.commit()
+        return format_response(f"✅ ဆရာရဲ့ {category_type} စာရင်း {count} ခုကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
 
 def delete_category_notes(category):
-    conn = sqlite3.connect('finance.db')
-    c = conn.cursor()
-    category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
-    cat_name = category_names.get(category, category)
-    c.execute("DELETE FROM notes WHERE category = ?", (category,))
-    deleted = c.rowcount
-    conn.commit()
-    conn.close()
-    backup_database()
-    return format_response(f"✅ ဆရာရဲ့ {cat_name} မှတ်စု {deleted} ခုကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    session = SessionLocal()
+    try:
+        category_names = {'work': 'အလုပ်ကိစ္စ', 'personal': 'ကိုယ်ရေးကိုယ်တာကိစ္စ', 'other': 'အခြားကိစ္စ'}
+        cat_name = category_names.get(category, category)
+        count = session.query(Note).filter(Note.category == category).delete()
+        session.commit()
+        return format_response(f"✅ ဆရာရဲ့ {cat_name} မှတ်စု {count} ခုကို အကျွန်ဖျက်လိုက်ပါပြီဆရာ။")
+    finally:
+        session.close()
